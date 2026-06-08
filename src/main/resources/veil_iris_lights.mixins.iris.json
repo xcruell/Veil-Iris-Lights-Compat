@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.yesmenn.veilirislights.mixin.iris",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MixinIrisRenderingPipeline",
+    "MixinProgramSource",
+    "MixinProgramDirectives",
+    "MixinShadowRenderer"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
