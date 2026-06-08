@@ -8,6 +8,7 @@ import foundry.veil.api.client.render.VeilRenderSystem;
 import foundry.veil.api.client.render.light.data.AreaLightData;
 import foundry.veil.api.client.render.light.data.PointLightData;
 import foundry.veil.api.client.render.light.renderer.LightRenderHandle;
+import foundry.veil.impl.client.render.light.VoxelShadowGrid;
 import net.irisshaders.iris.targets.RenderTarget;
 import net.irisshaders.iris.targets.RenderTargets;
 import net.irisshaders.iris.uniforms.CameraUniforms;
@@ -24,16 +25,21 @@ import com.yesmenn.veilirislights.config.LightRenderConfig;
 
 import java.nio.FloatBuffer;
 import java.util.Collection;
+import java.util.List;
 
 import static org.lwjgl.opengl.GL11C.*;
+import static org.lwjgl.opengl.GL12C.GL_TEXTURE_3D;
+import static org.lwjgl.opengl.GL12C.GL_TEXTURE_BINDING_3D;
 import static org.lwjgl.opengl.GL13C.GL_ACTIVE_TEXTURE;
 import static org.lwjgl.opengl.GL13C.GL_TEXTURE0;
+import static org.lwjgl.opengl.GL13C.GL_TEXTURE1;
 import static org.lwjgl.opengl.GL13C.glActiveTexture;
 import static org.lwjgl.opengl.GL14C.*;
 import static org.lwjgl.opengl.GL20C.*;
 import static org.lwjgl.opengl.GL30C.*;
 
 public final class IrisVeilLightPass {
+    private static final float SHADERPACK_LIGHT_GAIN = 3.0F;
 
     private static final int MAX_POINT_LIGHTS = 48;
     private static final int MAX_AREA_LIGHTS = 16;
@@ -45,6 +51,7 @@ public final class IrisVeilLightPass {
     private static boolean targetsLogged;
     private static int lastPointCount = -1;
     private static int lastAreaCount = -1;
+    private static boolean lastOcclusionEnabled;
 
     private IrisVeilLightPass() {
     }
@@ -72,6 +79,12 @@ public final class IrisVeilLightPass {
             return;
         }
 
+        boolean hasOccludedLights = hasOccludedLights(pointHandles, areaHandles);
+        lastOcclusionEnabled = hasOccludedLights;
+        if (hasOccludedLights) {
+            VoxelShadowGrid.setup();
+        }
+
         ensureInitialized();
         if (initializationFailed || program == 0) {
             return;
@@ -97,6 +110,9 @@ public final class IrisVeilLightPass {
         int oldVertexArray = glGetInteger(GL_VERTEX_ARRAY_BINDING);
         int oldActiveTexture = glGetInteger(GL_ACTIVE_TEXTURE);
         int oldTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
+        glActiveTexture(GL_TEXTURE1);
+        int oldVoxelTexture = glGetInteger(GL_TEXTURE_BINDING_3D);
+        glActiveTexture(oldActiveTexture);
         boolean oldBlend = glIsEnabled(GL_BLEND);
         boolean oldDepthTest = glIsEnabled(GL_DEPTH_TEST);
         boolean oldCull = glIsEnabled(GL_CULL_FACE);
@@ -114,6 +130,7 @@ public final class IrisVeilLightPass {
         if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
             VeilIrisLights.LOGGER.error("Veil Iris light framebuffer is incomplete");
             restoreState(oldFramebuffer, oldProgram, oldVertexArray, oldActiveTexture, oldTexture,
+                    oldVoxelTexture,
                     oldBlend, oldDepthTest, oldCull, oldBlendEquationRgb, oldBlendEquationAlpha,
                     oldBlendSrcRgb, oldBlendDstRgb, oldBlendSrcAlpha, oldBlendDstAlpha, oldViewport);
             return;
@@ -131,6 +148,13 @@ public final class IrisVeilLightPass {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, renderTargets.getDepthTexture());
         glUniform1i(glGetUniformLocation(program, "uDepth"), 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_3D, hasOccludedLights ? VoxelShadowGrid.getTextureId() : 0);
+        glUniform1i(glGetUniformLocation(program, "uBlockGrid"), 1);
+        Vector3f gridOrigin = new Vector3f(VoxelShadowGrid.getUniformGridPos());
+        glUniform3f(glGetUniformLocation(program, "uGridOrigin"),
+                gridOrigin.x, gridOrigin.y, gridOrigin.z);
+        glUniform1i(glGetUniformLocation(program, "uHasBlockGrid"), hasOccludedLights ? 1 : 0);
 
         Matrix4f inverseViewProjection = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferProjection())
                 .mul(CapturedRenderingState.INSTANCE.getGbufferModelView())
@@ -143,8 +167,12 @@ public final class IrisVeilLightPass {
         }
         glUniform3f(glGetUniformLocation(program, "uCameraPosition"),
                 (float) cameraPosition.x, (float) cameraPosition.y, (float) cameraPosition.z);
+        glUniform2f(glGetUniformLocation(program, "uInverseViewSize"),
+                1.0F / renderTargets.getCurrentWidth(),
+                1.0F / renderTargets.getCurrentHeight());
         LightRenderConfig config = LightRenderConfig.get();
         glUniform1f(glGetUniformLocation(program, "uColorStrength"), (float) config.colorStrength);
+        glUniform1f(glGetUniformLocation(program, "uColorSaturation"), (float) config.colorSaturation);
         glUniform1f(glGetUniformLocation(program, "uNeutralLift"), (float) config.neutralLift);
         glUniform1f(glGetUniformLocation(program, "uLuminanceBoostLimit"), (float) config.luminanceBoostLimit);
 
@@ -155,6 +183,7 @@ public final class IrisVeilLightPass {
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         restoreState(oldFramebuffer, oldProgram, oldVertexArray, oldActiveTexture, oldTexture,
+                oldVoxelTexture,
                 oldBlend, oldDepthTest, oldCull, oldBlendEquationRgb, oldBlendEquationAlpha,
                 oldBlendSrcRgb, oldBlendDstRgb, oldBlendSrcAlpha, oldBlendDstAlpha, oldViewport);
     }
@@ -177,6 +206,25 @@ public final class IrisVeilLightPass {
         targetsLogged = false;
         lastPointCount = -1;
         lastAreaCount = -1;
+        lastOcclusionEnabled = false;
+    }
+
+    public static void appendDebugInfo(List<String> lines) {
+        LightRenderConfig config = LightRenderConfig.get();
+        lines.add("");
+        lines.add("[Veil Iris Lights] " + (hookLogged ? "active" : "waiting"));
+        lines.add("Point lights: " + Math.max(lastPointCount, 0) + "/" + MAX_POINT_LIGHTS
+                + ", area lights: " + Math.max(lastAreaCount, 0) + "/" + MAX_AREA_LIGHTS);
+        lines.add("Voxel occlusion: " + (lastOcclusionEnabled ? "active" : "inactive"));
+        lines.add(String.format(
+                "Exposure: %.2f, color: %.2f, saturation: %.2f",
+                config.exposure,
+                config.colorStrength,
+                config.colorSaturation));
+        lines.add(String.format(
+                "Neutral: %.2f, luminance: %.2f",
+                config.neutralLift,
+                config.luminanceBoostLimit));
     }
 
     private static void uploadPointLights(Collection<? extends LightRenderHandle<PointLightData>> handles,
@@ -196,9 +244,10 @@ public final class IrisVeilLightPass {
             positionsAndRadii[index + 1] = (float) position.y;
             positionsAndRadii[index + 2] = (float) position.z;
             positionsAndRadii[index + 3] = light.getRadius();
-            colors[index] = color.red() * light.getBrightness() * exposure;
-            colors[index + 1] = color.green() * light.getBrightness() * exposure;
-            colors[index + 2] = color.blue() * light.getBrightness() * exposure;
+            colors[index] = color.red() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            colors[index + 1] = color.green() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            colors[index + 2] = color.blue() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            colors[index + 3] = light.isOcclusionEnabled() ? 1.0F : 0.0F;
             count++;
         }
         glUniform1i(glGetUniformLocation(program, "uPointCount"), count);
@@ -233,9 +282,10 @@ public final class IrisVeilLightPass {
             directionsAndAngles[index + 1] = direction.y;
             directionsAndAngles[index + 2] = direction.z;
             directionsAndAngles[index + 3] = (float) Math.cos(light.getAngle());
-            colors[index] = color.red() * light.getBrightness() * exposure;
-            colors[index + 1] = color.green() * light.getBrightness() * exposure;
-            colors[index + 2] = color.blue() * light.getBrightness() * exposure;
+            colors[index] = color.red() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            colors[index + 1] = color.green() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            colors[index + 2] = color.blue() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            colors[index + 3] = light.isOcclusionEnabled() ? 1.0F : 0.0F;
             count++;
         }
         glUniform1i(glGetUniformLocation(program, "uAreaCount"), count);
@@ -288,7 +338,7 @@ public final class IrisVeilLightPass {
     }
 
     private static void restoreState(int framebufferId, int programId, int vertexArrayId,
-                                     int activeTexture, int texture, boolean blend,
+                                     int activeTexture, int texture, int voxelTexture, boolean blend,
                                      boolean depthTest, boolean cull,
                                      int blendEquationRgb, int blendEquationAlpha,
                                      int blendSrcRgb, int blendDstRgb,
@@ -297,6 +347,8 @@ public final class IrisVeilLightPass {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferId);
         glUseProgram(programId);
         glBindVertexArray(vertexArrayId);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_3D, voxelTexture);
         glActiveTexture(activeTexture);
         glBindTexture(GL_TEXTURE_2D, texture);
         glBlendEquationSeparate(blendEquationRgb, blendEquationAlpha);
@@ -313,6 +365,22 @@ public final class IrisVeilLightPass {
         } else {
             glDisable(capability);
         }
+    }
+
+    private static boolean hasOccludedLights(
+            Collection<? extends LightRenderHandle<PointLightData>> pointHandles,
+            Collection<? extends LightRenderHandle<AreaLightData>> areaHandles) {
+        for (LightRenderHandle<PointLightData> handle : pointHandles) {
+            if (handle.isValid() && handle.getLightData().isOcclusionEnabled()) {
+                return true;
+            }
+        }
+        for (LightRenderHandle<AreaLightData> handle : areaHandles) {
+            if (handle.isValid() && handle.getLightData().isOcclusionEnabled()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static final String VERTEX_SHADER = """
@@ -336,9 +404,14 @@ public final class IrisVeilLightPass {
             const int MAX_AREA_LIGHTS = 16;
 
             uniform sampler2D uDepth;
+            uniform sampler3D uBlockGrid;
             uniform mat4 uInverseViewProjection;
             uniform vec3 uCameraPosition;
+            uniform vec2 uInverseViewSize;
+            uniform vec3 uGridOrigin;
+            uniform bool uHasBlockGrid;
             uniform float uColorStrength;
+            uniform float uColorSaturation;
             uniform float uNeutralLift;
             uniform float uLuminanceBoostLimit;
 
@@ -354,10 +427,158 @@ public final class IrisVeilLightPass {
             in vec2 vTexCoord;
             out vec4 fragColor;
 
-            vec3 reconstructWorldPosition(float depth) {
-                vec4 clip = vec4(vTexCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+            vec3 reconstructWorldPosition(vec2 texCoord, float depth) {
+                vec4 clip = vec4(texCoord * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
                 vec4 world = uInverseViewProjection * clip;
                 return world.xyz / world.w + uCameraPosition;
+            }
+
+            vec3 surfaceNormal(vec3 worldPosition) {
+                vec2 horizontalOffset = vec2(uInverseViewSize.x, 0.0);
+                vec2 verticalOffset = vec2(0.0, uInverseViewSize.y);
+                vec3 left = reconstructWorldPosition(
+                    vTexCoord - horizontalOffset,
+                    texture(uDepth, vTexCoord - horizontalOffset).r) - worldPosition;
+                vec3 right = reconstructWorldPosition(
+                    vTexCoord + horizontalOffset,
+                    texture(uDepth, vTexCoord + horizontalOffset).r) - worldPosition;
+                vec3 down = reconstructWorldPosition(
+                    vTexCoord - verticalOffset,
+                    texture(uDepth, vTexCoord - verticalOffset).r) - worldPosition;
+                vec3 up = reconstructWorldPosition(
+                    vTexCoord + verticalOffset,
+                    texture(uDepth, vTexCoord + verticalOffset).r) - worldPosition;
+
+                vec3 dx = dot(left, left) < dot(right, right) ? -left : right;
+                vec3 dy = dot(down, down) < dot(up, up) ? -down : up;
+                vec3 normal = normalize(cross(dx, dy));
+                if (length(dx) > 4.0 || length(dy) > 4.0) {
+                    normal = normalize(uCameraPosition - worldPosition);
+                }
+                if (dot(normal, uCameraPosition - worldPosition) < 0.0) {
+                    normal = -normal;
+                }
+                vec3 absoluteNormal = abs(normal);
+                float dominantAxis = max(absoluteNormal.x, max(absoluteNormal.y, absoluteNormal.z));
+                if (dominantAxis > 0.92) {
+                    normal = sign(normal) * step(vec3(dominantAxis - 0.0001), absoluteNormal);
+                }
+                return normal;
+            }
+
+            float surfaceResponse(vec3 normal, vec3 directionToLight) {
+                float lambert = max(dot(normal, directionToLight), 0.0);
+                return 0.15 * smoothstep(0.0, 0.08, lambert)
+                    + 0.85 * sqrt(lambert);
+            }
+
+            vec3 normalizeLightColor(vec3 color) {
+                float peak = max(color.r, max(color.g, color.b));
+                if (peak <= 0.0001) {
+                    return vec3(0.0);
+                }
+                vec3 hue = color / peak;
+                float luminance = dot(hue, vec3(0.2126, 0.7152, 0.0722));
+                float requestedBoost = luminance > 0.0001
+                    ? max(0.7152 / luminance, 1.0)
+                    : 1.0;
+                float boostRange = max(uLuminanceBoostLimit - 1.0, 0.0);
+                float boostDelta = requestedBoost - 1.0;
+                float boost = boostRange > 0.0001
+                    ? 1.0 + boostRange * boostDelta / (boostRange + boostDelta)
+                    : 1.0;
+                return hue * boost * peak;
+            }
+
+            vec3 applySaturation(vec3 color, float saturation) {
+                float luminance = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                vec3 chroma = color - vec3(luminance);
+                if (saturation <= 1.0) {
+                    return vec3(luminance) + chroma * saturation;
+                }
+
+                float minimumChroma = min(chroma.r, min(chroma.g, chroma.b));
+                float maximumScale = minimumChroma < -0.000001
+                    ? luminance / -minimumChroma
+                    : saturation;
+                float availableExtra = max(maximumScale - 1.0, 0.0);
+                float requestedExtra = saturation - 1.0;
+                float appliedExtra = availableExtra > 0.000001
+                    ? requestedExtra / (1.0 + requestedExtra / availableExtra)
+                    : 0.0;
+                return vec3(luminance) + chroma * (1.0 + appliedExtra);
+            }
+
+            bool insideGrid(ivec3 cell) {
+                ivec3 local = cell - ivec3(uGridOrigin);
+                return all(greaterThanEqual(local, ivec3(0)))
+                    && all(lessThan(local, ivec3(64)));
+            }
+
+            float shadowVisibility(vec3 worldPosition, vec3 normal, vec3 lightPosition, bool occluded) {
+                if (!occluded || !uHasBlockGrid) {
+                    return 1.0;
+                }
+
+                vec3 start = worldPosition + normal * 0.08;
+                vec3 ray = lightPosition - start;
+                float rayLength = length(ray);
+                if (rayLength <= 0.25) {
+                    return 1.0;
+                }
+
+                vec3 direction = ray / rayLength;
+                ivec3 cell = ivec3(floor(start));
+                ivec3 lightCell = ivec3(floor(lightPosition));
+                ivec3 stepDirection = ivec3(
+                    direction.x >= 0.0 ? 1 : -1,
+                    direction.y >= 0.0 ? 1 : -1,
+                    direction.z >= 0.0 ? 1 : -1
+                );
+                vec3 inverseDirection = 1.0 / max(abs(direction), vec3(0.00001));
+                vec3 nextBoundary = vec3(cell) + vec3(
+                    stepDirection.x > 0 ? 1.0 : 0.0,
+                    stepDirection.y > 0 ? 1.0 : 0.0,
+                    stepDirection.z > 0 ? 1.0 : 0.0
+                );
+                vec3 sideDistance = abs((nextBoundary - start) * inverseDirection);
+                vec3 deltaDistance = inverseDirection;
+                float visibility = 1.0;
+
+                for (int step = 0; step < 64; step++) {
+                    float traveled;
+                    if (sideDistance.x <= sideDistance.y && sideDistance.x <= sideDistance.z) {
+                        traveled = sideDistance.x;
+                        sideDistance.x += deltaDistance.x;
+                        cell.x += stepDirection.x;
+                    } else if (sideDistance.y <= sideDistance.z) {
+                        traveled = sideDistance.y;
+                        sideDistance.y += deltaDistance.y;
+                        cell.y += stepDirection.y;
+                    } else {
+                        traveled = sideDistance.z;
+                        sideDistance.z += deltaDistance.z;
+                        cell.z += stepDirection.z;
+                    }
+
+                    if (traveled >= rayLength - 0.2 || all(equal(cell, lightCell))) {
+                        return visibility;
+                    }
+                    if (!insideGrid(cell)) {
+                        return visibility;
+                    }
+
+                    ivec3 local = cell - ivec3(uGridOrigin);
+                    float occupancy = texelFetch(uBlockGrid, local, 0).r;
+                    if (occupancy >= 0.99) {
+                        return 0.0;
+                    }
+                    visibility *= 1.0 - occupancy * 0.75;
+                    if (visibility <= 0.04) {
+                        return 0.0;
+                    }
+                }
+                return visibility;
             }
 
             void main() {
@@ -366,7 +587,8 @@ public final class IrisVeilLightPass {
                     discard;
                 }
 
-                vec3 worldPosition = reconstructWorldPosition(depth);
+                vec3 worldPosition = reconstructWorldPosition(vTexCoord, depth);
+                vec3 normal = surfaceNormal(worldPosition);
                 vec3 lightSum = vec3(0.0);
 
                 for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
@@ -376,9 +598,27 @@ public final class IrisVeilLightPass {
                     vec3 delta = uPointPositionRadius[i].xyz - worldPosition;
                     float radius = uPointPositionRadius[i].w;
                     float distanceToLight = length(delta);
+                    if (distanceToLight <= 0.0001) {
+                        continue;
+                    }
                     float falloff = max(1.0 - distanceToLight / radius, 0.0);
                     falloff *= falloff;
-                    lightSum += uPointColor[i].rgb * falloff;
+                    if (falloff <= 0.0) {
+                        continue;
+                    }
+                    vec3 directionToLight = delta / distanceToLight;
+                    float surface = surfaceResponse(normal, directionToLight);
+                    if (surface <= 0.0) {
+                        continue;
+                    }
+                    float visibility = shadowVisibility(
+                        worldPosition,
+                        normal,
+                        uPointPositionRadius[i].xyz,
+                        uPointColor[i].a > 0.5
+                    );
+                    lightSum += normalizeLightColor(uPointColor[i].rgb)
+                        * falloff * surface * visibility;
                 }
 
                 for (int i = 0; i < MAX_AREA_LIGHTS; i++) {
@@ -388,23 +628,43 @@ public final class IrisVeilLightPass {
                     vec3 fromLight = worldPosition - uAreaPositionDistance[i].xyz;
                     float distanceToLight = length(fromLight);
                     float distanceLimit = uAreaPositionDistance[i].w;
+                    if (distanceToLight <= 0.0001) {
+                        continue;
+                    }
                     vec3 direction = normalize(fromLight);
                     float cone = dot(direction, normalize(uAreaDirectionAngle[i].xyz));
                     float edge = uAreaDirectionAngle[i].w;
                     float coneFalloff = smoothstep(edge, min(edge + 0.08, 1.0), cone);
                     float distanceFalloff = max(1.0 - distanceToLight / distanceLimit, 0.0);
-                    lightSum += uAreaColor[i].rgb * coneFalloff * distanceFalloff * distanceFalloff;
+                    if (coneFalloff <= 0.0 || distanceFalloff <= 0.0) {
+                        continue;
+                    }
+                    vec3 directionToLight = -direction;
+                    float surface = surfaceResponse(normal, directionToLight);
+                    if (surface <= 0.0) {
+                        continue;
+                    }
+                    float visibility = shadowVisibility(
+                        worldPosition,
+                        normal,
+                        uAreaPositionDistance[i].xyz,
+                        uAreaColor[i].a > 0.5
+                    );
+                    lightSum += normalizeLightColor(uAreaColor[i].rgb)
+                        * coneFalloff * distanceFalloff * distanceFalloff
+                        * surface * visibility;
                 }
 
-                float peak = max(lightSum.r, max(lightSum.g, lightSum.b));
-                vec3 hue = peak > 0.0001 ? lightSum / peak : vec3(0.0);
-                float perceivedLuminance = dot(hue, vec3(0.2126, 0.7152, 0.0722));
-                if (perceivedLuminance > 0.0001) {
-                    hue *= min(0.7152 / perceivedLuminance, uLuminanceBoostLimit);
-                }
-                float intensity = 1.0 - exp(-peak);
-                vec3 coloredLift = hue * intensity * uColorStrength;
-                vec3 neutralLift = vec3(intensity * uNeutralLift);
+                float energy = length(lightSum) * 0.57735026919;
+                float intensity = 1.0 - exp(-energy);
+                vec3 compressedLight = energy > 0.0001
+                    ? lightSum * (intensity / energy)
+                    : vec3(0.0);
+                vec3 rawColoredLift = compressedLight * uColorStrength;
+                float rawLuminance = dot(rawColoredLift, vec3(0.2126, 0.7152, 0.0722));
+                vec3 coloredLift = rawColoredLift / (1.0 + rawLuminance * 0.5);
+                coloredLift = applySaturation(coloredLift, uColorSaturation);
+                vec3 neutralLift = vec3(1.0 - exp(-intensity * uNeutralLift));
                 fragColor = vec4(coloredLift + neutralLift, 0.0);
             }
             """;

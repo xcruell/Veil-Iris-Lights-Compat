@@ -12,6 +12,10 @@ import java.util.function.DoubleSupplier;
 
 public final class LightRenderConfigScreen extends Screen {
 
+    private static final int PANEL_WIDTH = 310;
+    private static final int PANEL_HEIGHT = 194;
+    private static final int SLIDER_TOP_OFFSET = 32;
+
     private final Screen parent;
 
     public LightRenderConfigScreen(Screen parent) {
@@ -21,33 +25,39 @@ public final class LightRenderConfigScreen extends Screen {
 
     @Override
     protected void init() {
-        int left = this.width / 2 - 155;
-        int width = 310;
-        int y = this.height / 2 - 72;
+        int left = (this.width - PANEL_WIDTH) / 2;
+        int top = (this.height - PANEL_HEIGHT) / 2;
+        int y = top + SLIDER_TOP_OFFSET;
         LightRenderConfig config = LightRenderConfig.get();
 
         this.addRenderableWidget(new ConfigSlider(
-                left, y, width, "option.veil_iris_lights.exposure",
-                0.01, 1.0, () -> config.exposure, value -> config.exposure = value));
+                left, y, PANEL_WIDTH, "option.veil_iris_lights.exposure",
+                0.01, LightRenderConfig.MAX_EXPOSURE,
+                () -> config.exposure, value -> config.exposure = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 26, width, "option.veil_iris_lights.color_strength",
-                0.0, 6.0, () -> config.colorStrength, value -> config.colorStrength = value));
+                left, y + 26, PANEL_WIDTH, "option.veil_iris_lights.color_strength",
+                0.0, LightRenderConfig.MAX_COLOR_STRENGTH,
+                () -> config.colorStrength, value -> config.colorStrength = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 52, width, "option.veil_iris_lights.neutral_lift",
+                left, y + 52, PANEL_WIDTH, "option.veil_iris_lights.color_saturation",
+                0.5, 2.0, () -> config.colorSaturation, value -> config.colorSaturation = value));
+        this.addRenderableWidget(new ConfigSlider(
+                left, y + 78, PANEL_WIDTH, "option.veil_iris_lights.neutral_lift",
                 0.0, 2.0, () -> config.neutralLift, value -> config.neutralLift = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 78, width, "option.veil_iris_lights.luminance_limit",
-                1.0, 12.0, () -> config.luminanceBoostLimit, value -> config.luminanceBoostLimit = value));
+                left, y + 104, PANEL_WIDTH, "option.veil_iris_lights.luminance_limit",
+                1.0, LightRenderConfig.MAX_LUMINANCE_BOOST_LIMIT,
+                () -> config.luminanceBoostLimit, value -> config.luminanceBoostLimit = value));
 
         this.addRenderableWidget(Button.builder(
                 Component.translatable("controls.reset"),
                 button -> {
                     config.reset();
                     this.rebuildWidgets();
-                }).bounds(left, y + 116, 150, 20).build());
+                }).bounds(left, y + 142, 150, 20).build());
         this.addRenderableWidget(Button.builder(
                 Component.translatable("gui.done"),
-                button -> this.onClose()).bounds(left + 160, y + 116, 150, 20).build());
+                button -> this.onClose()).bounds(left + 160, y + 142, 150, 20).build());
     }
 
     @Override
@@ -61,12 +71,13 @@ public final class LightRenderConfigScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        graphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 2 - 102, 0xFFFFFF);
+        int top = (this.height - PANEL_HEIGHT) / 2;
+        graphics.drawCenteredString(this.font, this.title, this.width / 2, top, 0xFFFFFF);
         graphics.drawCenteredString(
                 this.font,
                 Component.translatable("screen.veil_iris_lights.live_hint"),
                 this.width / 2,
-                this.height / 2 - 90,
+                top + 14,
                 0xA0A0A0);
     }
 

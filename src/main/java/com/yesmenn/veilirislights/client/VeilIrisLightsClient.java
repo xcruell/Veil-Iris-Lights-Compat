@@ -2,10 +2,12 @@ package com.yesmenn.veilirislights.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.yesmenn.veilirislights.client.screen.LightRenderConfigScreen;
+import com.yesmenn.veilirislights.compat.light.IrisVeilLightPass;
 import com.yesmenn.veilirislights.config.LightRenderConfig;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.CustomizeGuiOverlayEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import org.lwjgl.glfw.GLFW;
 
@@ -29,6 +31,10 @@ public final class VeilIrisLightsClient {
         while (OPEN_CONFIG.consumeClick()) {
             minecraft.setScreen(new LightRenderConfigScreen(minecraft.screen));
         }
+    }
+
+    public static void onDebugText(CustomizeGuiOverlayEvent.DebugText event) {
+        IrisVeilLightPass.appendDebugInfo(event.getRight());
     }
 
     public static void initialize() {
