@@ -1,0 +1,133 @@
+# Veil Iris Lights Compat
+
+Veil Iris Lights Compat bridges Veil rendering and dynamic lights into the
+active Iris shaderpack pipeline on NeoForge.
+
+Veil effects normally render outside a shaderpack's G-buffer and may disappear,
+use incorrect depth information, or fail to contribute light while Iris shaders
+are enabled. This mod translates Veil shader programs for Iris and provides a
+dedicated shaderpack-compatible pass for Veil point and area lights.
+
+## Features
+
+- Renders Veil shader effects through the active Iris shaderpack pipeline.
+- Injects Veil vertex and fragment behavior into compatible Iris G-buffer programs.
+- Preserves shaderpack depth, albedo, fog, and render-target behavior where possible.
+- Supports opaque and translucent Veil effects.
+- Uses Iris `EntitiesTrans` programs for translucent effects when available.
+- Provides screen-door dithering as a fallback for shaderpacks without a suitable translucent program.
+- Supports Veil effects in Iris shadow-map rendering.
+- Automatically rebuilds and caches translated shaders after shaderpack reloads.
+- Adds shaderpack-compatible Veil point lights.
+- Adds shaderpack-compatible Veil area and cone lights.
+- Supports multiple differently colored lights and additive color mixing.
+- Applies perceptual color normalization so red, green, and blue lights have more consistent perceived brightness.
+- Reconstructs world positions from the shaderpack depth buffer.
+- Reconstructs surface normals for angle-dependent diffuse lighting.
+- Supports distance attenuation and area-light cone attenuation.
+- Supports voxel-based light occlusion and block shadows.
+- Supports solid blocks and partially transmissive leaves as voxel shadow casters.
+- Uses tone-mapped light contribution to preserve surface texture under bright or overlapping lights.
+- Includes an in-game light-rendering configuration screen.
+- Configuration can be opened with `O` by default or from the mod list.
+- Exposure, color strength, neutral brightness, and color luminance normalization can be adjusted live.
+- Color saturation can be adjusted independently from brightness and exposure.
+- Exposure can be adjusted up to 2.00 and color strength up to 12.00.
+- Adds live Compat pass diagnostics to the F3 debug screen.
+- Configuration is saved to `config/veil_iris_lights.json`.
+- Falls back to normal Veil rendering while shaderpacks are disabled.
+
+## Requirements
+
+- Minecraft 1.21.1
+- NeoForge 21.1.228 or newer
+- Iris 1.8.1 or newer
+- Veil 4.0.0 or newer
+- Sodium as required by Iris
+
+## Compatibility Notes
+
+- Shaderpacks differ significantly internally. The mod uses Iris G-buffer
+  programs and common render targets, but unusual shaderpack layouts may still
+  require compatibility work.
+- Voxel shadows use a camera-centered 64 x 64 x 64 block grid.
+- Voxel shadows are block based. Complex partial models are approximated, while
+  leaves use partial transmission rather than texture-alpha sampling.
+- The shaderpack light pass currently supports up to 48 point lights and
+  16 area lights per frame.
+- This is a client-side rendering compatibility mod. It does not add light
+  blocks or other gameplay content by itself.
+
+===============================================================================
+
+# Version 1.0.0
+
+Initial release.
+
+## Added
+
+- Initial NeoForge 1.21.1 support.
+- Veil shader capture and Iris shader-program translation.
+- Vertex and fragment shader integration into Iris G-buffer programs.
+- Opaque Veil effect support.
+- Translucent Veil effect support through `EntitiesTrans`.
+- Dithering fallback for translucent effects.
+- Iris shadow-pass integration for Veil-rendered geometry.
+- Shader cache with automatic invalidation after shaderpack reloads.
+- Graceful fallback to standard Veil rendering when Iris shaders are disabled.
+- Bundled GLSL Transformer runtime.
+
+===============================================================================
+
+# Version 1.1.0
+
+Dynamic Veil lighting support and rendering controls.
+
+## Added
+
+- Dedicated Iris-compatible fullscreen light pass.
+- Veil point-light support with shaderpacks enabled.
+- Veil area- and cone-light support with shaderpacks enabled.
+- Multiple-light color accumulation and color mixing.
+- Perceptual RGB luminance normalization.
+- Configurable exposure, color strength, neutral brightness, and luminance boost.
+- Configurable color saturation with a slightly richer default.
+- In-game configuration screen with live updates.
+- Default `O` key binding and mod-list configuration entry.
+- Persistent JSON configuration.
+- F3 diagnostics for pass state, light counts, voxel occlusion, and render settings.
+- World-position reconstruction from the Iris depth buffer.
+- Screen-space surface-normal reconstruction.
+- Angle-dependent diffuse surface lighting.
+- Veil voxel-grid integration for occluded lights.
+- DDA-based block shadow calculation.
+- Leaves as voxel shadow casters.
+- Partial light transmission through leaves.
+
+## Improved
+
+- More consistent brightness between red, green, and blue lights.
+- More natural surface response based on the angle toward each light.
+- Smooth grazing-angle lighting without a hard Lambert cutoff.
+- Texture preservation under bright and overlapping colored lights.
+- Continuous color mixing without dominant-channel seams.
+- Color-neutral intensity compression for smooth RGB transitions.
+- Brighter shaderpack lighting with additional tone-map headroom.
+- Expanded exposure and color-strength adjustment ranges.
+- Stabilized reconstructed surface normals to remove view-dependent striping on flat surfaces.
+- Gamut-safe saturation adjustment without hard channel clipping.
+- Recentered the configuration layout with consistent title, hint, slider, and button spacing.
+- Reduced unnecessary DDA work outside a light's range or on unlit surfaces.
+- Light-block self-occlusion handling.
+
+## Fixed
+
+- Fixed Veil lights disappearing when shaderpacks were enabled.
+- Fixed light colors appearing mostly white.
+- Fixed light influence moving with the camera or cursor.
+- Fixed harsh color transitions between differently colored lights.
+- Fixed overexposed areas losing their visible texture.
+- Fixed occluded Light Blocks appearing disabled while the camera was nearby.
+- Fixed leaves failing to cast voxel shadows.
+- Replaced direct client-memory voxel uploads with persistent pixel-buffer
+  staging to avoid the NVIDIA driver crashes observed during voxel-grid updates.

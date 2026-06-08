@@ -18,13 +18,18 @@ public final class LightRenderConfig {
 
     public static final double DEFAULT_EXPOSURE = 0.24;
     public static final double DEFAULT_COLOR_STRENGTH = 2.45;
+    public static final double DEFAULT_COLOR_SATURATION = 1.15;
     public static final double DEFAULT_NEUTRAL_LIFT = 0.28;
-    public static final double DEFAULT_LUMINANCE_BOOST_LIMIT = 4.0;
+    public static final double DEFAULT_LUMINANCE_BOOST_LIMIT = 1.6;
+    public static final double MAX_EXPOSURE = 2.0;
+    public static final double MAX_COLOR_STRENGTH = 12.0;
+    public static final double MAX_LUMINANCE_BOOST_LIMIT = 1.6;
 
     private static LightRenderConfig instance = defaults();
 
     public double exposure = DEFAULT_EXPOSURE;
     public double colorStrength = DEFAULT_COLOR_STRENGTH;
+    public double colorSaturation = DEFAULT_COLOR_SATURATION;
     public double neutralLift = DEFAULT_NEUTRAL_LIFT;
     public double luminanceBoostLimit = DEFAULT_LUMINANCE_BOOST_LIMIT;
 
@@ -66,15 +71,23 @@ public final class LightRenderConfig {
     public void reset() {
         this.exposure = DEFAULT_EXPOSURE;
         this.colorStrength = DEFAULT_COLOR_STRENGTH;
+        this.colorSaturation = DEFAULT_COLOR_SATURATION;
         this.neutralLift = DEFAULT_NEUTRAL_LIFT;
         this.luminanceBoostLimit = DEFAULT_LUMINANCE_BOOST_LIMIT;
     }
 
     private void clamp() {
-        this.exposure = clamp(this.exposure, 0.01, 1.0);
-        this.colorStrength = clamp(this.colorStrength, 0.0, 6.0);
+        this.exposure = clamp(this.exposure, 0.01, MAX_EXPOSURE);
+        this.colorStrength = clamp(this.colorStrength, 0.0, MAX_COLOR_STRENGTH);
+        if (this.colorSaturation <= 0.0) {
+            this.colorSaturation = DEFAULT_COLOR_SATURATION;
+        }
+        this.colorSaturation = clamp(this.colorSaturation, 0.5, 2.0);
         this.neutralLift = clamp(this.neutralLift, 0.0, 2.0);
-        this.luminanceBoostLimit = clamp(this.luminanceBoostLimit, 1.0, 12.0);
+        this.luminanceBoostLimit = clamp(
+                this.luminanceBoostLimit,
+                1.0,
+                MAX_LUMINANCE_BOOST_LIMIT);
     }
 
     private static double clamp(double value, double min, double max) {

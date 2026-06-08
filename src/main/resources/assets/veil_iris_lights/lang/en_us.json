@@ -5,6 +5,7 @@
   "screen.veil_iris_lights.live_hint": "Changes are previewed immediately and saved when closing",
   "option.veil_iris_lights.exposure": "Exposure: %s",
   "option.veil_iris_lights.color_strength": "Color strength: %s",
+  "option.veil_iris_lights.color_saturation": "Color saturation: %s",
   "option.veil_iris_lights.neutral_lift": "Neutral brightness: %s",
   "option.veil_iris_lights.luminance_limit": "Color luminance limit: %s"
 }

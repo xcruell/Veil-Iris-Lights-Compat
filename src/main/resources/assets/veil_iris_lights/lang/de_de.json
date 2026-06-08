@@ -5,6 +5,7 @@
   "screen.veil_iris_lights.live_hint": "Änderungen werden sofort angezeigt und beim Schließen gespeichert",
   "option.veil_iris_lights.exposure": "Belichtungsstärke: %s",
   "option.veil_iris_lights.color_strength": "Farbstärke: %s",
+  "option.veil_iris_lights.color_saturation": "Farbsättigung: %s",
   "option.veil_iris_lights.neutral_lift": "Neutrale Helligkeit: %s",
   "option.veil_iris_lights.luminance_limit": "Farbhelligkeits-Limit: %s"
 }

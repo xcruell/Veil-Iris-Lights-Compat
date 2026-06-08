@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "MixinDirectShaderCompiler",
-    "MixinShaderProgramShard"
+    "MixinPackResourceListener",
+    "MixinShaderProgramShard",
+    "MixinVoxelShadowGrid"
   ],
   "injectors": {
     "defaultRequire": 1

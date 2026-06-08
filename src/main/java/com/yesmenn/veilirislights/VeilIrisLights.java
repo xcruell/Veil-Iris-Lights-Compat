@@ -19,6 +19,7 @@ public final class VeilIrisLights {
         VeilIrisLightsClient.initialize();
         modBus.addListener(VeilIrisLightsClient::registerKeyMappings);
         NeoForge.EVENT_BUS.addListener(VeilIrisLightsClient::onClientTick);
+        NeoForge.EVENT_BUS.addListener(VeilIrisLightsClient::onDebugText);
         IConfigScreenFactory configScreenFactory =
                 (ignored, parent) -> new LightRenderConfigScreen(parent);
         container.registerExtensionPoint(IConfigScreenFactory.class, configScreenFactory);
