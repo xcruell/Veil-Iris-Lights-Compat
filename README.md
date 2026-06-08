@@ -13,9 +13,3 @@ programs when shaderpacks reload, and supports Iris shadow rendering.
 - NeoForge 21.1.228 or newer
 - Iris 1.8.1 or newer
 - Veil 4.0.0 or newer
-
-Build with:
-
-```powershell
-.\gradlew.bat build --no-daemon
-```
