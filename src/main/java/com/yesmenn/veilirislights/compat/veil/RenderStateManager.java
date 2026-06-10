@@ -7,8 +7,11 @@ package com.yesmenn.veilirislights.compat.veil;
  * <p>Set by {@code MixinShadowRenderer} at the boundaries of
  * {@code ShadowRenderer.renderShadows()}, read by shader creation code.
  */
-public class RenderStateManager {
+public final class RenderStateManager {
     private static boolean renderingShadow;
+
+    private RenderStateManager() {
+    }
 
     public static boolean isRenderingShadow() {
         return renderingShadow;

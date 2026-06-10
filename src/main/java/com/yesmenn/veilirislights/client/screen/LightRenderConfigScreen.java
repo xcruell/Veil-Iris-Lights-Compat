@@ -13,7 +13,7 @@ import java.util.function.DoubleSupplier;
 public final class LightRenderConfigScreen extends Screen {
 
     private static final int PANEL_WIDTH = 310;
-    private static final int PANEL_HEIGHT = 194;
+    private static final int PANEL_HEIGHT = 220;
     private static final int SLIDER_TOP_OFFSET = 32;
 
     private final Screen parent;
@@ -30,22 +30,28 @@ public final class LightRenderConfigScreen extends Screen {
         int y = top + SLIDER_TOP_OFFSET;
         LightRenderConfig config = LightRenderConfig.get();
 
+        this.addRenderableWidget(Button.builder(
+                qualityLabel(config),
+                button -> {
+                    config.quality = config.quality.next();
+                    button.setMessage(qualityLabel(config));
+                }).bounds(left, y, PANEL_WIDTH, 20).build());
         this.addRenderableWidget(new ConfigSlider(
-                left, y, PANEL_WIDTH, "option.veil_iris_lights.exposure",
+                left, y + 26, PANEL_WIDTH, "option.veil_iris_lights.exposure",
                 0.01, LightRenderConfig.MAX_EXPOSURE,
                 () -> config.exposure, value -> config.exposure = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 26, PANEL_WIDTH, "option.veil_iris_lights.color_strength",
+                left, y + 52, PANEL_WIDTH, "option.veil_iris_lights.color_strength",
                 0.0, LightRenderConfig.MAX_COLOR_STRENGTH,
                 () -> config.colorStrength, value -> config.colorStrength = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 52, PANEL_WIDTH, "option.veil_iris_lights.color_saturation",
+                left, y + 78, PANEL_WIDTH, "option.veil_iris_lights.color_saturation",
                 0.5, 2.0, () -> config.colorSaturation, value -> config.colorSaturation = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 78, PANEL_WIDTH, "option.veil_iris_lights.neutral_lift",
+                left, y + 104, PANEL_WIDTH, "option.veil_iris_lights.neutral_lift",
                 0.0, 2.0, () -> config.neutralLift, value -> config.neutralLift = value));
         this.addRenderableWidget(new ConfigSlider(
-                left, y + 104, PANEL_WIDTH, "option.veil_iris_lights.luminance_limit",
+                left, y + 130, PANEL_WIDTH, "option.veil_iris_lights.luminance_limit",
                 1.0, LightRenderConfig.MAX_LUMINANCE_BOOST_LIMIT,
                 () -> config.luminanceBoostLimit, value -> config.luminanceBoostLimit = value));
 
@@ -54,10 +60,16 @@ public final class LightRenderConfigScreen extends Screen {
                 button -> {
                     config.reset();
                     this.rebuildWidgets();
-                }).bounds(left, y + 142, 150, 20).build());
+                }).bounds(left, y + 168, 150, 20).build());
         this.addRenderableWidget(Button.builder(
                 Component.translatable("gui.done"),
-                button -> this.onClose()).bounds(left + 160, y + 142, 150, 20).build());
+                button -> this.onClose()).bounds(left + 160, y + 168, 150, 20).build());
+    }
+
+    private static Component qualityLabel(LightRenderConfig config) {
+        return Component.translatable(
+                "option.veil_iris_lights.quality",
+                Component.translatable(config.quality.translationKey()));
     }
 
     @Override

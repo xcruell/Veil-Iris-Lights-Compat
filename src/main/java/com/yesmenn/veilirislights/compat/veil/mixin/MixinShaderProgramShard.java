@@ -30,16 +30,22 @@ import com.yesmenn.veilirislights.compat.veil.RenderStateManager;
 public class MixinShaderProgramShard {
 
     @Unique
-    private volatile ShaderInstance veilIrisLights$cachedIrisShader;
+    private static final Matrix4f veilIrisLights$normalMatrix4 = new Matrix4f();
 
     @Unique
-    private volatile boolean veilIrisLights$cachedIsShadow;
+    private static final Matrix3f veilIrisLights$normalMatrix3 = new Matrix3f();
 
     @Unique
-    private volatile int veilIrisLights$lastShaderPackGen = -1;
+    private ShaderInstance veilIrisLights$cachedIrisShader;
 
     @Unique
-    private volatile boolean veilIrisLights$creationAttempted;
+    private boolean veilIrisLights$cachedIsShadow;
+
+    @Unique
+    private int veilIrisLights$lastShaderPackGen = -1;
+
+    @Unique
+    private boolean veilIrisLights$creationAttempted;
 
     @Inject(method = "setupRenderState", at = @At("TAIL"))
     private void veilIrisLights$interceptSetupRenderState(CallbackInfo ci) {
@@ -91,10 +97,9 @@ public class MixinShaderProgramShard {
 
         Uniform normalUniform = shader.getUniform("iris_NormalMat");
         if (normalUniform != null) {
-            Matrix4f normalMatrix = new Matrix4f(ShadowRenderer.MODELVIEW);
-            normalMatrix.invert();
-            normalMatrix.transpose();
-            normalUniform.set(new Matrix3f(normalMatrix));
+            veilIrisLights$normalMatrix4.set(ShadowRenderer.MODELVIEW).invert().transpose();
+            veilIrisLights$normalMatrix3.set(veilIrisLights$normalMatrix4);
+            normalUniform.set(veilIrisLights$normalMatrix3);
         }
     }
 

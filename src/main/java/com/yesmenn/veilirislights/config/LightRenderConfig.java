@@ -27,6 +27,7 @@ public final class LightRenderConfig {
 
     private static LightRenderConfig instance = defaults();
 
+    public RenderQuality quality = RenderQuality.HIGH;
     public double exposure = DEFAULT_EXPOSURE;
     public double colorStrength = DEFAULT_COLOR_STRENGTH;
     public double colorSaturation = DEFAULT_COLOR_SATURATION;
@@ -69,6 +70,7 @@ public final class LightRenderConfig {
     }
 
     public void reset() {
+        this.quality = RenderQuality.HIGH;
         this.exposure = DEFAULT_EXPOSURE;
         this.colorStrength = DEFAULT_COLOR_STRENGTH;
         this.colorSaturation = DEFAULT_COLOR_SATURATION;
@@ -77,6 +79,9 @@ public final class LightRenderConfig {
     }
 
     private void clamp() {
+        if (this.quality == null) {
+            this.quality = RenderQuality.HIGH;
+        }
         this.exposure = clamp(this.exposure, 0.01, MAX_EXPOSURE);
         this.colorStrength = clamp(this.colorStrength, 0.0, MAX_COLOR_STRENGTH);
         if (this.colorSaturation <= 0.0) {
@@ -96,5 +101,38 @@ public final class LightRenderConfig {
 
     private static LightRenderConfig defaults() {
         return new LightRenderConfig();
+    }
+
+    public enum RenderQuality {
+        PERFORMANCE("option.veil_iris_lights.quality.performance", false, false),
+        BALANCED("option.veil_iris_lights.quality.balanced", false, true),
+        HIGH("option.veil_iris_lights.quality.high", true, true);
+
+        private final String translationKey;
+        private final boolean detailedNormals;
+        private final boolean voxelShadows;
+
+        RenderQuality(String translationKey, boolean detailedNormals, boolean voxelShadows) {
+            this.translationKey = translationKey;
+            this.detailedNormals = detailedNormals;
+            this.voxelShadows = voxelShadows;
+        }
+
+        public String translationKey() {
+            return this.translationKey;
+        }
+
+        public boolean detailedNormals() {
+            return this.detailedNormals;
+        }
+
+        public boolean voxelShadows() {
+            return this.voxelShadows;
+        }
+
+        public RenderQuality next() {
+            RenderQuality[] values = values();
+            return values[(this.ordinal() + 1) % values.length];
+        }
     }
 }

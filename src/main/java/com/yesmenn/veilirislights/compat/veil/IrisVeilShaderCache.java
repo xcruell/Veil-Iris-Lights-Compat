@@ -14,16 +14,11 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * Thread-safe cache mapping Veil shader paths to Iris {@link ShaderInstance} objects.
  *
- * <p>Cache entries are keyed by an opaque shaderpack fingerprint that changes
- * whenever Iris reloads its shaders. Entries from previous generations are
- * lazily invalidated when the fingerprint changes.
- *
- * <p>Auto-classification is implicit: if the Iris {@link IrisVeilProgramLinker}
- * fails to create a program (e.g. the shader is translucent or the shaderpack
- * has no compatible block program), {@code null} is stored and the caller
- * falls back to the original Veil shader.
+ * <p>Entries are discarded whenever Iris rebuilds its pipeline. Iris owns the
+ * generated shader instances and releases their OpenGL resources with the old
+ * pipeline.
  */
-public class IrisVeilShaderCache {
+public final class IrisVeilShaderCache {
 
     private static final ConcurrentMap<String, ShaderInstance> CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, IrisVeilProgramLinker.Params> PARAM_CACHE = new ConcurrentHashMap<>();
@@ -36,9 +31,12 @@ public class IrisVeilShaderCache {
     /** Monotonically increasing counter; incremented on shaderpack reload. */
     private static volatile int shaderPackGeneration;
 
+    private IrisVeilShaderCache() {
+    }
+
     /**
      * Returns the current shaderpack generation number.
-     * Used by {@link IrisVeilShaderProgramShard} to detect stale cache entries.
+     * Used by the Veil shader-state mixin to detect stale local references.
      */
     public static int getShaderPackGeneration() {
         return shaderPackGeneration;
@@ -102,18 +100,17 @@ public class IrisVeilShaderCache {
             if (created != null) {
                 VeilIrisLights.LOGGER.debug("IrisVeilShaderCache: cached Iris shader for '{}'", shaderPath);
             }
-            return created; // may be null → fallback to Veil
+            return created;
         });
     }
 
     /**
      * Invalidates all cached ShaderInstances. Called on Iris shaderpack reload.
-     * Old entries are lazily replaced on next access because the fingerprint changes.
      */
     public static void onShaderPackReload() {
+        CACHE.clear();
         shaderPackGeneration++;
         PARAM_CACHE.clear();
-        // Old entries will be superseded by new fingerprint on next getOrCreate().
         VeilIrisLights.LOGGER.debug("IrisVeilShaderCache: shaderpack reloaded (gen {})", shaderPackGeneration);
     }
 
@@ -127,16 +124,6 @@ public class IrisVeilShaderCache {
      */
     public static void storeProcessedVertexSource(ResourceLocation shaderId, String sourceCode) {
         PROCESSED_VERTEX_SOURCES.put(shaderId, sourceCode);
-    }
-
-    /**
-     * Retrieves a cached Veil-processed vertex shader source, if available.
-     *
-     * @param shaderId the Veil vertex shader logical ID
-     * @return the processed GLSL source, or {@code null} if not yet compiled
-     */
-    public static String getProcessedSource(ResourceLocation shaderId) {
-        return getProcessedVertexSource(shaderId);
     }
 
     public static String getProcessedVertexSource(ResourceLocation shaderId) {
@@ -155,11 +142,6 @@ public class IrisVeilShaderCache {
      * Clears all cached entries and resets the generation counter.
      */
     public static void clear() {
-        CACHE.values().forEach(s -> {
-            try { s.close(); } catch (Exception e) {
-                VeilIrisLights.LOGGER.debug("IrisVeilShaderCache: error closing shader: {}", e.getMessage());
-            }
-        });
         CACHE.clear();
         PARAM_CACHE.clear();
         PROCESSED_VERTEX_SOURCES.clear();
@@ -178,7 +160,6 @@ public class IrisVeilShaderCache {
     }
 
     private static String shaderPackFingerprint() {
-        // Combine generation counter with a hint of the active shaderpack
         return "gen" + shaderPackGeneration;
     }
 }
