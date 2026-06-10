@@ -13,14 +13,14 @@ import net.irisshaders.iris.targets.RenderTarget;
 import net.irisshaders.iris.targets.RenderTargets;
 import net.irisshaders.iris.uniforms.CameraUniforms;
 import net.irisshaders.iris.uniforms.CapturedRenderingState;
-import net.minecraft.client.Minecraft;
-import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3d;
+import org.joml.Vector3dc;
 import org.joml.Vector3f;
 import org.lwjgl.system.MemoryStack;
 import com.yesmenn.veilirislights.VeilIrisLights;
+import com.yesmenn.veilirislights.compat.veil.VoxelShadowGridState;
 import com.yesmenn.veilirislights.config.LightRenderConfig;
 
 import java.nio.FloatBuffer;
@@ -43,9 +43,18 @@ public final class IrisVeilLightPass {
 
     private static final int MAX_POINT_LIGHTS = 48;
     private static final int MAX_AREA_LIGHTS = 16;
+    private static final float[] POINT_POSITIONS = new float[MAX_POINT_LIGHTS * 4];
+    private static final float[] POINT_COLORS = new float[MAX_POINT_LIGHTS * 4];
+    private static final float[] AREA_POSITIONS = new float[MAX_AREA_LIGHTS * 4];
+    private static final float[] AREA_DIRECTIONS = new float[MAX_AREA_LIGHTS * 4];
+    private static final float[] AREA_COLORS = new float[MAX_AREA_LIGHTS * 4];
+    private static final int[] VIEWPORT = new int[4];
+
     private static int program;
     private static int framebuffer;
     private static int vertexArray;
+    private static int attachedColorTexture;
+    private static UniformLocations uniforms;
     private static boolean initializationFailed;
     private static boolean hookLogged;
     private static boolean targetsLogged;
@@ -65,12 +74,12 @@ public final class IrisVeilLightPass {
                 VeilRenderSystem.renderer().getLightRenderer().getLights(LightTypeRegistry.AREA.get());
         if (!hookLogged) {
             hookLogged = true;
-            VeilIrisLights.LOGGER.info("Veil Iris light pass is active");
+            VeilIrisLights.LOGGER.debug("Veil Iris light pass is active");
         }
         if (pointHandles.size() != lastPointCount || areaHandles.size() != lastAreaCount) {
             lastPointCount = pointHandles.size();
             lastAreaCount = areaHandles.size();
-            VeilIrisLights.LOGGER.info(
+            VeilIrisLights.LOGGER.debug(
                     "Veil Iris light pass sees {} point light(s) and {} area light(s)",
                     lastPointCount,
                     lastAreaCount);
@@ -79,11 +88,14 @@ public final class IrisVeilLightPass {
             return;
         }
 
-        boolean hasOccludedLights = hasOccludedLights(pointHandles, areaHandles);
+        LightRenderConfig config = LightRenderConfig.get();
+        boolean hasOccludedLights = config.quality.voxelShadows()
+                && hasOccludedLights(pointHandles, areaHandles);
         lastOcclusionEnabled = hasOccludedLights;
         if (hasOccludedLights) {
             VoxelShadowGrid.setup();
         }
+        boolean hasUsableVoxelGrid = hasOccludedLights && VoxelShadowGridState.isReady();
 
         ensureInitialized();
         if (initializationFailed || program == 0) {
@@ -96,7 +108,7 @@ public final class IrisVeilLightPass {
                 : colorTarget.getMainTexture();
         if (!targetsLogged) {
             targetsLogged = true;
-            VeilIrisLights.LOGGER.info(
+            VeilIrisLights.LOGGER.debug(
                     "Veil Iris targets: color={}, depth={}, flipped={}, size={}x{}",
                     colorTexture,
                     renderTargets.getDepthTexture(),
@@ -109,6 +121,7 @@ public final class IrisVeilLightPass {
         int oldProgram = glGetInteger(GL_CURRENT_PROGRAM);
         int oldVertexArray = glGetInteger(GL_VERTEX_ARRAY_BINDING);
         int oldActiveTexture = glGetInteger(GL_ACTIVE_TEXTURE);
+        glActiveTexture(GL_TEXTURE0);
         int oldTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
         glActiveTexture(GL_TEXTURE1);
         int oldVoxelTexture = glGetInteger(GL_TEXTURE_BINDING_3D);
@@ -122,18 +135,25 @@ public final class IrisVeilLightPass {
         int oldBlendDstRgb = glGetInteger(GL_BLEND_DST_RGB);
         int oldBlendSrcAlpha = glGetInteger(GL_BLEND_SRC_ALPHA);
         int oldBlendDstAlpha = glGetInteger(GL_BLEND_DST_ALPHA);
-        int[] oldViewport = new int[4];
-        glGetIntegerv(GL_VIEWPORT, oldViewport);
+        glGetIntegerv(GL_VIEWPORT, VIEWPORT);
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
-        if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            VeilIrisLights.LOGGER.error("Veil Iris light framebuffer is incomplete");
-            restoreState(oldFramebuffer, oldProgram, oldVertexArray, oldActiveTexture, oldTexture,
-                    oldVoxelTexture,
-                    oldBlend, oldDepthTest, oldCull, oldBlendEquationRgb, oldBlendEquationAlpha,
-                    oldBlendSrcRgb, oldBlendDstRgb, oldBlendSrcAlpha, oldBlendDstAlpha, oldViewport);
-            return;
+        if (attachedColorTexture != colorTexture) {
+            glFramebufferTexture2D(
+                    GL_DRAW_FRAMEBUFFER,
+                    GL_COLOR_ATTACHMENT0,
+                    GL_TEXTURE_2D,
+                    colorTexture,
+                    0);
+            attachedColorTexture = colorTexture;
+            if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                VeilIrisLights.LOGGER.error("Veil Iris light framebuffer is incomplete");
+                restoreState(oldFramebuffer, oldProgram, oldVertexArray, oldActiveTexture, oldTexture,
+                        oldVoxelTexture,
+                        oldBlend, oldDepthTest, oldCull, oldBlendEquationRgb, oldBlendEquationAlpha,
+                        oldBlendSrcRgb, oldBlendDstRgb, oldBlendSrcAlpha, oldBlendDstAlpha, VIEWPORT);
+                return;
+            }
         }
         glDrawBuffer(GL_COLOR_ATTACHMENT0);
         glViewport(0, 0, renderTargets.getCurrentWidth(), renderTargets.getCurrentHeight());
@@ -147,14 +167,15 @@ public final class IrisVeilLightPass {
         glUseProgram(program);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, renderTargets.getDepthTexture());
-        glUniform1i(glGetUniformLocation(program, "uDepth"), 0);
+        glUniform1i(uniforms.depth(), 0);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_3D, hasOccludedLights ? VoxelShadowGrid.getTextureId() : 0);
-        glUniform1i(glGetUniformLocation(program, "uBlockGrid"), 1);
+        glBindTexture(GL_TEXTURE_3D, hasUsableVoxelGrid ? VoxelShadowGrid.getTextureId() : 0);
+        glUniform1i(uniforms.blockGrid(), 1);
         Vector3f gridOrigin = new Vector3f(VoxelShadowGrid.getUniformGridPos());
-        glUniform3f(glGetUniformLocation(program, "uGridOrigin"),
+        glUniform3f(uniforms.gridOrigin(),
                 gridOrigin.x, gridOrigin.y, gridOrigin.z);
-        glUniform1i(glGetUniformLocation(program, "uHasBlockGrid"), hasOccludedLights ? 1 : 0);
+        glUniform1i(uniforms.hasBlockGrid(), hasUsableVoxelGrid ? 1 : 0);
+        glUniform1i(uniforms.detailedNormals(), config.quality.detailedNormals() ? 1 : 0);
 
         Matrix4f inverseViewProjection = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferProjection())
                 .mul(CapturedRenderingState.INSTANCE.getGbufferModelView())
@@ -163,18 +184,17 @@ public final class IrisVeilLightPass {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             FloatBuffer matrix = stack.mallocFloat(16);
             inverseViewProjection.get(matrix);
-            glUniformMatrix4fv(glGetUniformLocation(program, "uInverseViewProjection"), false, matrix);
+            glUniformMatrix4fv(uniforms.inverseViewProjection(), false, matrix);
         }
-        glUniform3f(glGetUniformLocation(program, "uCameraPosition"),
+        glUniform3f(uniforms.cameraPosition(),
                 (float) cameraPosition.x, (float) cameraPosition.y, (float) cameraPosition.z);
-        glUniform2f(glGetUniformLocation(program, "uInverseViewSize"),
+        glUniform2f(uniforms.inverseViewSize(),
                 1.0F / renderTargets.getCurrentWidth(),
                 1.0F / renderTargets.getCurrentHeight());
-        LightRenderConfig config = LightRenderConfig.get();
-        glUniform1f(glGetUniformLocation(program, "uColorStrength"), (float) config.colorStrength);
-        glUniform1f(glGetUniformLocation(program, "uColorSaturation"), (float) config.colorSaturation);
-        glUniform1f(glGetUniformLocation(program, "uNeutralLift"), (float) config.neutralLift);
-        glUniform1f(glGetUniformLocation(program, "uLuminanceBoostLimit"), (float) config.luminanceBoostLimit);
+        glUniform1f(uniforms.colorStrength(), (float) config.colorStrength);
+        glUniform1f(uniforms.colorSaturation(), (float) config.colorSaturation);
+        glUniform1f(uniforms.neutralLift(), (float) config.neutralLift);
+        glUniform1f(uniforms.luminanceBoostLimit(), (float) config.luminanceBoostLimit);
 
         uploadPointLights(pointHandles, (float) config.exposure);
         uploadAreaLights(areaHandles, (float) config.exposure);
@@ -185,7 +205,7 @@ public final class IrisVeilLightPass {
         restoreState(oldFramebuffer, oldProgram, oldVertexArray, oldActiveTexture, oldTexture,
                 oldVoxelTexture,
                 oldBlend, oldDepthTest, oldCull, oldBlendEquationRgb, oldBlendEquationAlpha,
-                oldBlendSrcRgb, oldBlendDstRgb, oldBlendSrcAlpha, oldBlendDstAlpha, oldViewport);
+                oldBlendSrcRgb, oldBlendDstRgb, oldBlendSrcAlpha, oldBlendDstAlpha, VIEWPORT);
     }
 
     public static void close() {
@@ -201,6 +221,8 @@ public final class IrisVeilLightPass {
             glDeleteVertexArrays(vertexArray);
             vertexArray = 0;
         }
+        attachedColorTexture = 0;
+        uniforms = null;
         initializationFailed = false;
         hookLogged = false;
         targetsLogged = false;
@@ -215,7 +237,8 @@ public final class IrisVeilLightPass {
         lines.add("[Veil Iris Lights] " + (hookLogged ? "active" : "waiting"));
         lines.add("Point lights: " + Math.max(lastPointCount, 0) + "/" + MAX_POINT_LIGHTS
                 + ", area lights: " + Math.max(lastAreaCount, 0) + "/" + MAX_AREA_LIGHTS);
-        lines.add("Voxel occlusion: " + (lastOcclusionEnabled ? "active" : "inactive"));
+        lines.add("Quality: " + config.quality.name().toLowerCase()
+                + ", voxel occlusion: " + (lastOcclusionEnabled ? "active" : "inactive"));
         lines.add(String.format(
                 "Exposure: %.2f, color: %.2f, saturation: %.2f",
                 config.exposure,
@@ -229,39 +252,34 @@ public final class IrisVeilLightPass {
 
     private static void uploadPointLights(Collection<? extends LightRenderHandle<PointLightData>> handles,
                                           float exposure) {
-        float[] positionsAndRadii = new float[MAX_POINT_LIGHTS * 4];
-        float[] colors = new float[MAX_POINT_LIGHTS * 4];
         int count = 0;
         for (LightRenderHandle<PointLightData> handle : handles) {
             if (!handle.isValid() || count >= MAX_POINT_LIGHTS) {
                 continue;
             }
             PointLightData light = handle.getLightData();
-            Vector3d position = new Vector3d(light.getPosition());
+            Vector3dc position = light.getPosition();
             Colorc color = light.getColor();
             int index = count * 4;
-            positionsAndRadii[index] = (float) position.x;
-            positionsAndRadii[index + 1] = (float) position.y;
-            positionsAndRadii[index + 2] = (float) position.z;
-            positionsAndRadii[index + 3] = light.getRadius();
-            colors[index] = color.red() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
-            colors[index + 1] = color.green() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
-            colors[index + 2] = color.blue() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
-            colors[index + 3] = light.isOcclusionEnabled() ? 1.0F : 0.0F;
+            POINT_POSITIONS[index] = (float) position.x();
+            POINT_POSITIONS[index + 1] = (float) position.y();
+            POINT_POSITIONS[index + 2] = (float) position.z();
+            POINT_POSITIONS[index + 3] = light.getRadius();
+            POINT_COLORS[index] = color.red() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            POINT_COLORS[index + 1] = color.green() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            POINT_COLORS[index + 2] = color.blue() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            POINT_COLORS[index + 3] = light.isOcclusionEnabled() ? 1.0F : 0.0F;
             count++;
         }
-        glUniform1i(glGetUniformLocation(program, "uPointCount"), count);
+        glUniform1i(uniforms.pointCount(), count);
         if (count > 0) {
-            glUniform4fv(glGetUniformLocation(program, "uPointPositionRadius"), positionsAndRadii);
-            glUniform4fv(glGetUniformLocation(program, "uPointColor"), colors);
+            glUniform4fv(uniforms.pointPositionRadius(), POINT_POSITIONS);
+            glUniform4fv(uniforms.pointColor(), POINT_COLORS);
         }
     }
 
     private static void uploadAreaLights(Collection<? extends LightRenderHandle<AreaLightData>> handles,
                                          float exposure) {
-        float[] positionsAndDistances = new float[MAX_AREA_LIGHTS * 4];
-        float[] directionsAndAngles = new float[MAX_AREA_LIGHTS * 4];
-        float[] colors = new float[MAX_AREA_LIGHTS * 4];
         int count = 0;
         for (LightRenderHandle<AreaLightData> handle : handles) {
             if (!handle.isValid() || count >= MAX_AREA_LIGHTS) {
@@ -274,25 +292,25 @@ public final class IrisVeilLightPass {
                     .normalize();
             Colorc color = light.getColor();
             int index = count * 4;
-            positionsAndDistances[index] = (float) position.x;
-            positionsAndDistances[index + 1] = (float) position.y;
-            positionsAndDistances[index + 2] = (float) position.z;
-            positionsAndDistances[index + 3] = light.getDistance();
-            directionsAndAngles[index] = direction.x;
-            directionsAndAngles[index + 1] = direction.y;
-            directionsAndAngles[index + 2] = direction.z;
-            directionsAndAngles[index + 3] = (float) Math.cos(light.getAngle());
-            colors[index] = color.red() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
-            colors[index + 1] = color.green() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
-            colors[index + 2] = color.blue() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
-            colors[index + 3] = light.isOcclusionEnabled() ? 1.0F : 0.0F;
+            AREA_POSITIONS[index] = (float) position.x;
+            AREA_POSITIONS[index + 1] = (float) position.y;
+            AREA_POSITIONS[index + 2] = (float) position.z;
+            AREA_POSITIONS[index + 3] = light.getDistance();
+            AREA_DIRECTIONS[index] = direction.x;
+            AREA_DIRECTIONS[index + 1] = direction.y;
+            AREA_DIRECTIONS[index + 2] = direction.z;
+            AREA_DIRECTIONS[index + 3] = (float) Math.cos(light.getAngle());
+            AREA_COLORS[index] = color.red() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            AREA_COLORS[index + 1] = color.green() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            AREA_COLORS[index + 2] = color.blue() * light.getBrightness() * exposure * SHADERPACK_LIGHT_GAIN;
+            AREA_COLORS[index + 3] = light.isOcclusionEnabled() ? 1.0F : 0.0F;
             count++;
         }
-        glUniform1i(glGetUniformLocation(program, "uAreaCount"), count);
+        glUniform1i(uniforms.areaCount(), count);
         if (count > 0) {
-            glUniform4fv(glGetUniformLocation(program, "uAreaPositionDistance"), positionsAndDistances);
-            glUniform4fv(glGetUniformLocation(program, "uAreaDirectionAngle"), directionsAndAngles);
-            glUniform4fv(glGetUniformLocation(program, "uAreaColor"), colors);
+            glUniform4fv(uniforms.areaPositionDistance(), AREA_POSITIONS);
+            glUniform4fv(uniforms.areaDirectionAngle(), AREA_DIRECTIONS);
+            glUniform4fv(uniforms.areaColor(), AREA_COLORS);
         }
     }
 
@@ -323,6 +341,7 @@ public final class IrisVeilLightPass {
 
         framebuffer = glGenFramebuffers();
         vertexArray = glGenVertexArrays();
+        uniforms = UniformLocations.create(program);
     }
 
     private static int compileShader(int type, String source) {
@@ -383,6 +402,51 @@ public final class IrisVeilLightPass {
         return false;
     }
 
+    private record UniformLocations(
+            int depth,
+            int blockGrid,
+            int inverseViewProjection,
+            int cameraPosition,
+            int inverseViewSize,
+            int gridOrigin,
+            int hasBlockGrid,
+            int detailedNormals,
+            int colorStrength,
+            int colorSaturation,
+            int neutralLift,
+            int luminanceBoostLimit,
+            int pointCount,
+            int pointPositionRadius,
+            int pointColor,
+            int areaCount,
+            int areaPositionDistance,
+            int areaDirectionAngle,
+            int areaColor) {
+
+        private static UniformLocations create(int program) {
+            return new UniformLocations(
+                    glGetUniformLocation(program, "uDepth"),
+                    glGetUniformLocation(program, "uBlockGrid"),
+                    glGetUniformLocation(program, "uInverseViewProjection"),
+                    glGetUniformLocation(program, "uCameraPosition"),
+                    glGetUniformLocation(program, "uInverseViewSize"),
+                    glGetUniformLocation(program, "uGridOrigin"),
+                    glGetUniformLocation(program, "uHasBlockGrid"),
+                    glGetUniformLocation(program, "uDetailedNormals"),
+                    glGetUniformLocation(program, "uColorStrength"),
+                    glGetUniformLocation(program, "uColorSaturation"),
+                    glGetUniformLocation(program, "uNeutralLift"),
+                    glGetUniformLocation(program, "uLuminanceBoostLimit"),
+                    glGetUniformLocation(program, "uPointCount"),
+                    glGetUniformLocation(program, "uPointPositionRadius"),
+                    glGetUniformLocation(program, "uPointColor"),
+                    glGetUniformLocation(program, "uAreaCount"),
+                    glGetUniformLocation(program, "uAreaPositionDistance"),
+                    glGetUniformLocation(program, "uAreaDirectionAngle"),
+                    glGetUniformLocation(program, "uAreaColor"));
+        }
+    }
+
     private static final String VERTEX_SHADER = """
             #version 150
             out vec2 vTexCoord;
@@ -410,6 +474,7 @@ public final class IrisVeilLightPass {
             uniform vec2 uInverseViewSize;
             uniform vec3 uGridOrigin;
             uniform bool uHasBlockGrid;
+            uniform bool uDetailedNormals;
             uniform float uColorStrength;
             uniform float uColorSaturation;
             uniform float uNeutralLift;
@@ -434,23 +499,30 @@ public final class IrisVeilLightPass {
             }
 
             vec3 surfaceNormal(vec3 worldPosition) {
-                vec2 horizontalOffset = vec2(uInverseViewSize.x, 0.0);
-                vec2 verticalOffset = vec2(0.0, uInverseViewSize.y);
-                vec3 left = reconstructWorldPosition(
-                    vTexCoord - horizontalOffset,
-                    texture(uDepth, vTexCoord - horizontalOffset).r) - worldPosition;
-                vec3 right = reconstructWorldPosition(
-                    vTexCoord + horizontalOffset,
-                    texture(uDepth, vTexCoord + horizontalOffset).r) - worldPosition;
-                vec3 down = reconstructWorldPosition(
-                    vTexCoord - verticalOffset,
-                    texture(uDepth, vTexCoord - verticalOffset).r) - worldPosition;
-                vec3 up = reconstructWorldPosition(
-                    vTexCoord + verticalOffset,
-                    texture(uDepth, vTexCoord + verticalOffset).r) - worldPosition;
+                vec3 dx;
+                vec3 dy;
+                if (uDetailedNormals) {
+                    vec2 horizontalOffset = vec2(uInverseViewSize.x, 0.0);
+                    vec2 verticalOffset = vec2(0.0, uInverseViewSize.y);
+                    vec3 left = reconstructWorldPosition(
+                        vTexCoord - horizontalOffset,
+                        texture(uDepth, vTexCoord - horizontalOffset).r) - worldPosition;
+                    vec3 right = reconstructWorldPosition(
+                        vTexCoord + horizontalOffset,
+                        texture(uDepth, vTexCoord + horizontalOffset).r) - worldPosition;
+                    vec3 down = reconstructWorldPosition(
+                        vTexCoord - verticalOffset,
+                        texture(uDepth, vTexCoord - verticalOffset).r) - worldPosition;
+                    vec3 up = reconstructWorldPosition(
+                        vTexCoord + verticalOffset,
+                        texture(uDepth, vTexCoord + verticalOffset).r) - worldPosition;
+                    dx = dot(left, left) < dot(right, right) ? -left : right;
+                    dy = dot(down, down) < dot(up, up) ? -down : up;
+                } else {
+                    dx = dFdx(worldPosition);
+                    dy = dFdy(worldPosition);
+                }
 
-                vec3 dx = dot(left, left) < dot(right, right) ? -left : right;
-                vec3 dy = dot(down, down) < dot(up, up) ? -down : up;
                 vec3 normal = normalize(cross(dx, dy));
                 if (length(dx) > 4.0 || length(dy) > 4.0) {
                     normal = normalize(uCameraPosition - worldPosition);
@@ -515,6 +587,29 @@ public final class IrisVeilLightPass {
                     && all(lessThan(local, ivec3(64)));
             }
 
+            bool clipRayToGrid(inout vec3 start, vec3 direction, float rayLength) {
+                vec3 gridMinimum = uGridOrigin;
+                vec3 gridMaximum = uGridOrigin + vec3(64.0);
+                vec3 safeDirection = vec3(
+                    abs(direction.x) > 0.00001 ? direction.x : 0.00001,
+                    abs(direction.y) > 0.00001 ? direction.y : 0.00001,
+                    abs(direction.z) > 0.00001 ? direction.z : 0.00001
+                );
+                vec3 first = (gridMinimum - start) / safeDirection;
+                vec3 second = (gridMaximum - start) / safeDirection;
+                vec3 nearAxis = min(first, second);
+                vec3 farAxis = max(first, second);
+                float nearDistance = max(max(nearAxis.x, nearAxis.y), nearAxis.z);
+                float farDistance = min(min(farAxis.x, farAxis.y), farAxis.z);
+                if (farDistance < max(nearDistance, 0.0) || nearDistance >= rayLength) {
+                    return false;
+                }
+                if (nearDistance > 0.0) {
+                    start += direction * (nearDistance + 0.001);
+                }
+                return true;
+            }
+
             float shadowVisibility(vec3 worldPosition, vec3 normal, vec3 lightPosition, bool occluded) {
                 if (!occluded || !uHasBlockGrid) {
                     return 1.0;
@@ -528,6 +623,16 @@ public final class IrisVeilLightPass {
                 }
 
                 vec3 direction = ray / rayLength;
+                if (!insideGrid(ivec3(floor(start)))
+                        && !clipRayToGrid(start, direction, rayLength)) {
+                    return 1.0;
+                }
+                ray = lightPosition - start;
+                rayLength = length(ray);
+                if (rayLength <= 0.0001) {
+                    return 1.0;
+                }
+                direction = ray / rayLength;
                 ivec3 cell = ivec3(floor(start));
                 ivec3 lightCell = ivec3(floor(lightPosition));
                 ivec3 stepDirection = ivec3(

@@ -29,12 +29,15 @@ dedicated shaderpack-compatible pass for Veil point and area lights.
 - Supports solid blocks and partially transmissive leaves as voxel shadow casters.
 - Uses tone-mapped light contribution to preserve surface texture under bright or overlapping lights.
 - Includes an in-game light-rendering configuration screen.
+- Includes Performance, Balanced, and High rendering-quality presets.
 - Configuration can be opened with `O` by default or from the mod list.
 - Exposure, color strength, neutral brightness, and color luminance normalization can be adjusted live.
 - Color saturation can be adjusted independently from brightness and exposure.
 - Exposure can be adjusted up to 2.00 and color strength up to 12.00.
 - Adds live Compat pass diagnostics to the F3 debug screen.
 - Configuration is saved to `config/veil_iris_lights.json`.
+- Automatically supports standard Veil point and area lights created by other mods.
+- Provides tag and Java API hooks for non-occluding light-source blocks.
 - Falls back to normal Veil rendering while shaderpacks are disabled.
 
 ## Requirements
@@ -131,3 +134,56 @@ Dynamic Veil lighting support and rendering controls.
 - Fixed leaves failing to cast voxel shadows.
 - Replaced direct client-memory voxel uploads with persistent pixel-buffer
   staging to avoid the NVIDIA driver crashes observed during voxel-grid updates.
+
+===============================================================================
+
+# Version 1.2.0
+
+Performance, stability, color balancing, and integration improvements.
+
+## Added
+
+- Performance, Balanced, and High rendering-quality presets.
+- Live quality selection in the in-game configuration screen.
+- `#veil_iris_lights:non_occluding` block tag for light-source blocks that
+  should not block their own Veil light.
+- Public `VeilIrisLightOcclusion` registration API for client mods.
+- Optional built-in tag entry for `yesmenn:colored_light`.
+
+## Improved
+
+- Reduced the blue-channel brightness advantage with bounded, smooth luminance
+  compensation for more even RGB falloff and better-centered color mixing.
+- Cached all fullscreen light-pass uniform locations.
+- Reused light upload arrays and shadow normal matrices instead of allocating
+  them repeatedly while rendering.
+- Avoided repeated framebuffer completeness checks when the render target has
+  not changed.
+- Restored OpenGL texture bindings per texture unit after the light pass.
+- Added a lower-cost derivative-normal path for Performance and Balanced modes.
+- Reduced normal-depth sampling and disabled voxel tracing in Performance mode.
+- Kept all quality presets at the full 48 point-light and 16 area-light limits.
+- Dropped stale translated-shader cache references whenever Iris rebuilds its
+  shaderpack pipeline while leaving OpenGL resource ownership to Iris.
+- Simplified the translucent dithering patcher and removed unused code paths.
+- Reduced routine shader translation messages from info to debug logging.
+- Replaced the hard-coded MennURL light-block check with a reusable block tag.
+
+## Fixed
+
+- Fixed stale translated shader references accumulating across shaderpack reloads.
+- Fixed a native crash during shaderpack switching caused by closing
+  Iris-owned shader programs from the Compat cache.
+- Fixed invalid Veil development-resource watch paths spamming startup errors.
+- Fixed the active texture unit not always being restored correctly after the
+  shaderpack light pass.
+- Fixed excessive blue luminance compensation producing a visibly larger blue
+  falloff and shifting cyan transitions toward green.
+- Restored Veil's camera-centered voxel shadow grid so visible walls and
+  surfaces receive consistent occlusion from all nearby light sources.
+- Traced distant light rays through the known section of the voxel grid without
+  abruptly suppressing lights outside its finite range.
+- Kept the existing multiplicative shaderpack light compositing to avoid
+  over-brightening shaderpack output.
+- Kept lights visible without temporary occlusion only while Veil is actively
+  rebuilding its voxel shadow grid.

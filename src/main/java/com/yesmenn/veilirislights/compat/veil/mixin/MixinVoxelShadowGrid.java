@@ -1,6 +1,8 @@
 package com.yesmenn.veilirislights.compat.veil.mixin;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.yesmenn.veilirislights.api.VeilIrisLightOcclusion;
+import com.yesmenn.veilirislights.compat.veil.VoxelShadowGridState;
 import foundry.veil.api.client.registry.LightTypeRegistry;
 import foundry.veil.api.client.render.VeilRenderSystem;
 import foundry.veil.api.client.render.light.data.AreaLightData;
@@ -9,7 +11,10 @@ import foundry.veil.api.client.render.light.renderer.LightRenderHandle;
 import foundry.veil.impl.client.render.light.VoxelShadowGrid;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.lwjgl.BufferUtils;
@@ -19,6 +24,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.nio.ByteBuffer;
@@ -39,6 +45,11 @@ import static org.lwjgl.opengl.GL45C.nglTextureSubImage3D;
 public abstract class MixinVoxelShadowGrid {
 
     @Unique
+    private static final TagKey<Block> veilIrisLights$nonOccluding =
+            TagKey.create(Registries.BLOCK,
+                    ResourceLocation.fromNamespaceAndPath("veil_iris_lights", "non_occluding"));
+
+    @Unique
     private static final int veilIrisLights$gridBytes =
             VoxelShadowGrid.GRID_SIZE * VoxelShadowGrid.GRID_SIZE * VoxelShadowGrid.GRID_SIZE;
 
@@ -51,6 +62,12 @@ public abstract class MixinVoxelShadowGrid {
 
     @Shadow
     private static int textureId;
+
+    @Shadow
+    private static ByteBuffer gridBuffer;
+
+    @Shadow
+    private static ByteBuffer buildBuffer;
 
     @Inject(method = "hasOccludedLights", at = @At("HEAD"), cancellable = true)
     private static void veilIrisLights$detectCompatLights(CallbackInfoReturnable<Boolean> cir) {
@@ -71,14 +88,19 @@ public abstract class MixinVoxelShadowGrid {
         }
     }
 
+    @Inject(method = "setup", at = @At("RETURN"))
+    private static void veilIrisLights$trackGridState(CallbackInfo ci) {
+        VoxelShadowGridState.setReady(gridBuffer != null);
+    }
+
     @Inject(method = "voxelOccupancy", at = @At("HEAD"), cancellable = true)
     private static void veilIrisLights$expandShadowCasters(
             ClientLevel level,
             BlockPos pos,
             BlockState state,
             CallbackInfoReturnable<Byte> cir) {
-        var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
-        if ("yesmenn".equals(blockId.getNamespace()) && "colored_light".equals(blockId.getPath())) {
+        if (state.is(veilIrisLights$nonOccluding)
+                || VeilIrisLightOcclusion.isNonOccluding(state)) {
             cir.setReturnValue((byte) 0);
         } else if (state.getBlock() instanceof LeavesBlock) {
             cir.setReturnValue((byte) 0x60);

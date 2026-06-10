@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  * code is renamed into a helper function that computes {@code _veil_fragColor};
  * common shaderpack albedo expressions are then redirected to that color.</p>
  */
-public class GlslTransformerVeilFragmentPatcher {
+final class GlslTransformerVeilFragmentPatcher {
     private static final Pattern VERSION_LINE =
         Pattern.compile("(?m)^\\s*#version\\s+\\d+(?:\\s+\\w+)?\\s*$");
     private static final Pattern VERSION_NUMBER =

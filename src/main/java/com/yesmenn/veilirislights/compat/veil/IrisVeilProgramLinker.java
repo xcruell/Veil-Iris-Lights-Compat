@@ -58,7 +58,7 @@ import static org.lwjgl.opengl.GL20C.GL_VERTEX_SHADER;
  * <p>If any step fails, returns {@code null} — the caller should fall back to
  * the original Veil shader.
  */
-public class IrisVeilProgramLinker {
+final class IrisVeilProgramLinker {
 
     public record Params(ProgramId programId, boolean useDithering) {}
 
@@ -82,7 +82,7 @@ public class IrisVeilProgramLinker {
             // 1. Get Iris rendering pipeline
             WorldRenderingPipeline pipeline = Iris.getPipelineManager().getPipelineNullable();
             if (!(pipeline instanceof IrisRenderingPipelineAccessor irisPipeline)) {
-                VeilIrisLights.LOGGER.warn("VeilIrisLights: Iris pipeline not available for '{}'", shaderPath);
+                VeilIrisLights.LOGGER.warn("Iris pipeline is unavailable for '{}'", shaderPath);
                 return null;
             }
 
@@ -93,7 +93,7 @@ public class IrisVeilProgramLinker {
             // 3. Get vertex format from Veil program
             VertexFormat format = veilProgram.getFormat();
             if (format == null) {
-                VeilIrisLights.LOGGER.warn("VeilIrisLights: Veil program '{}' has no vertex format", shaderPath);
+                VeilIrisLights.LOGGER.warn("Veil program '{}' has no vertex format", shaderPath);
                 return null;
             }
 
@@ -107,10 +107,14 @@ public class IrisVeilProgramLinker {
                 {
                     // in laser/laser. The vertex shader uses UV instead of UV0. ShaderProgramImpl.CompiledProgram.detectVertexFormat will fail to detect and fallback to DefaultVertexFormat.Position. We fix it here.
                     format = DefaultVertexFormat.POSITION_TEX_COLOR;
-                    VeilIrisLights.LOGGER.warn("VeilIrisLights: Veil program '{}' has 'Color' but vertex format doesn't, VeilIrisLights will modified the format to DefaultVertexFormat.POSITION_TEX_COLOR", shaderPath);
+                    VeilIrisLights.LOGGER.warn(
+                            "Veil program '{}' uses Color and UV attributes missing from its detected format; using POSITION_TEX_COLOR",
+                            shaderPath);
                 }else{
                     format = DefaultVertexFormat.POSITION_COLOR;
-                    VeilIrisLights.LOGGER.warn("VeilIrisLights: Veil program '{}' has 'Color' but vertex format doesn't, VeilIrisLights will modified the format to DefaultVertexFormat.POSITION_COLOR", shaderPath);
+                    VeilIrisLights.LOGGER.warn(
+                            "Veil program '{}' uses a Color attribute missing from its detected format; using POSITION_COLOR",
+                            shaderPath);
                 }
             }
 
@@ -129,17 +133,17 @@ public class IrisVeilProgramLinker {
             }
             Optional<ProgramSource> sourceOpt = resolver.resolve(programId);
             if (programId == ProgramId.Shadow) {
-                VeilIrisLights.LOGGER.info("VeilIrisLights: using Shadow program for '{}'", shaderPath);
+                VeilIrisLights.LOGGER.debug("Using Iris Shadow program for '{}'", shaderPath);
             } else if (programId == ProgramId.EntitiesTrans) {
-                VeilIrisLights.LOGGER.info("VeilIrisLights: using EntitiesTrans program for translucent '{}'", shaderPath);
+                VeilIrisLights.LOGGER.debug("Using Iris EntitiesTrans program for '{}'", shaderPath);
             } else if (useDithering) {
-                VeilIrisLights.LOGGER.info("VeilIrisLights: using Block program with dithering for translucent '{}'", shaderPath);
+                VeilIrisLights.LOGGER.debug("Using Iris Block program with dithering for '{}'", shaderPath);
             } else {
-                VeilIrisLights.LOGGER.info("VeilIrisLights: using Block program for opaque '{}'", shaderPath);
+                VeilIrisLights.LOGGER.debug("Using Iris Block program for '{}'", shaderPath);
             }
 
             if (sourceOpt.isEmpty()) {
-                VeilIrisLights.LOGGER.warn("VeilIrisLights: no {} program in shaderpack for '{}'", programId, shaderPath);
+                VeilIrisLights.LOGGER.warn("Shaderpack has no {} program for '{}'", programId, shaderPath);
                 return null;
             }
             ProgramSource source = sourceOpt.get();
@@ -148,7 +152,10 @@ public class IrisVeilProgramLinker {
             String irisVertSource = source.getVertexSource().orElse(null);
             String irisFragSource = source.getFragmentSource().orElse(null);
             if (irisVertSource == null || irisFragSource == null) {
-                VeilIrisLights.LOGGER.warn("VeilIrisLights: {} program has no vertex or fragment source for '{}'", programId, shaderPath);
+                VeilIrisLights.LOGGER.warn(
+                        "Shaderpack {} program has no vertex or fragment source for '{}'",
+                        programId,
+                        shaderPath);
                 return null;
             }
 
@@ -175,10 +182,7 @@ public class IrisVeilProgramLinker {
             // 10. Apply dithering after Veil patching so the alpha varying is
             // not re-parsed and stripped by the main Veil transformer.
             if (useDithering) {
-                VeilDitheringPatcher.DitherResult ditherResult = VeilDitheringPatcher.applyFragmentDithering(
-                    patchedVertSource, irisFragSource, "IGN");
-                patchedVertSource = ditherResult.patchedVertex();
-                irisFragSource = ditherResult.patchedFragment();
+                irisFragSource = VeilDitheringPatcher.applyFragmentDithering(irisFragSource);
             }
 
             patchedVertSource = JcppProcessor.glslPreprocessSource(patchedVertSource, environmentDefines);
@@ -230,11 +234,11 @@ public class IrisVeilProgramLinker {
                 );
             }
 
-            VeilIrisLights.LOGGER.info("VeilIrisLights: created Iris ShaderInstance for '{}'", shaderPath);
+            VeilIrisLights.LOGGER.debug("Created Iris ShaderInstance for '{}'", shaderPath);
             return shader;
 
         } catch (Exception e) {
-            VeilIrisLights.LOGGER.error("VeilIrisLights: failed to create Iris shader for '{}'", shaderPath, e);
+            VeilIrisLights.LOGGER.error("Failed to create Iris shader for '{}'", shaderPath, e);
             return null;
         }
     }

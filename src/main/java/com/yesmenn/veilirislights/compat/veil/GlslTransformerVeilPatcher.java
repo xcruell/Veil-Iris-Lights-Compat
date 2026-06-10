@@ -54,7 +54,7 @@ import java.util.regex.Pattern;
  *   <li>Remove Iris extension attributes, replace with zeros.</li>
  * </ol>
  */
-public class GlslTransformerVeilPatcher {
+final class GlslTransformerVeilPatcher {
     private static final String VEIL_MODEL_VERTEX = "_veil_modelVertex";
     private static final String VEIL_CLIP_POSITION = "_veil_clipPosition";
 

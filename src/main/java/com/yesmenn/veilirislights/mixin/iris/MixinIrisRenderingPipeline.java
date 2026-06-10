@@ -47,13 +47,7 @@ public abstract class MixinIrisRenderingPipeline implements IrisRenderingPipelin
     @Inject(method = "<init>",at = @At("TAIL"),remap = false)
     public void initSet(ProgramSet set, CallbackInfo callbackInfo){
         programSet = set;
-        // Iris pipeline (re)created → shaderpack changed → invalidate Veil shader cache
-        // Catch Throwable to handle NoClassDefFoundError when Veil is not loaded
-        try {
-            IrisVeilShaderCache.onShaderPackReload();
-        } catch (Throwable e) {
-            // Veil not present, silently ignore
-        }
+        IrisVeilShaderCache.onShaderPackReload();
     }
 
     @Inject(method = "finalizeLevelRendering", at = @At("HEAD"), remap = false)
