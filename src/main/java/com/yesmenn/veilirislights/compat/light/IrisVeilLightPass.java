@@ -41,8 +41,8 @@ import static org.lwjgl.opengl.GL30C.*;
 public final class IrisVeilLightPass {
     private static final float SHADERPACK_LIGHT_GAIN = 3.0F;
 
-    private static final int MAX_POINT_LIGHTS = 48;
-    private static final int MAX_AREA_LIGHTS = 16;
+    private static final int MAX_POINT_LIGHTS = LightRenderConfig.MAX_POINT_LIGHTS;
+    private static final int MAX_AREA_LIGHTS = LightRenderConfig.MAX_AREA_LIGHTS;
     private static final float[] POINT_POSITIONS = new float[MAX_POINT_LIGHTS * 4];
     private static final float[] POINT_COLORS = new float[MAX_POINT_LIGHTS * 4];
     private static final float[] AREA_POSITIONS = new float[MAX_AREA_LIGHTS * 4];
@@ -89,7 +89,7 @@ public final class IrisVeilLightPass {
         }
 
         LightRenderConfig config = LightRenderConfig.get();
-        boolean hasOccludedLights = config.quality.voxelShadows()
+        boolean hasOccludedLights = config.voxelShadows
                 && hasOccludedLights(pointHandles, areaHandles);
         lastOcclusionEnabled = hasOccludedLights;
         if (hasOccludedLights) {
@@ -175,7 +175,7 @@ public final class IrisVeilLightPass {
         glUniform3f(uniforms.gridOrigin(),
                 gridOrigin.x, gridOrigin.y, gridOrigin.z);
         glUniform1i(uniforms.hasBlockGrid(), hasUsableVoxelGrid ? 1 : 0);
-        glUniform1i(uniforms.detailedNormals(), config.quality.detailedNormals() ? 1 : 0);
+        glUniform1i(uniforms.detailedNormals(), config.detailedNormals ? 1 : 0);
 
         Matrix4f inverseViewProjection = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferProjection())
                 .mul(CapturedRenderingState.INSTANCE.getGbufferModelView())
@@ -196,8 +196,8 @@ public final class IrisVeilLightPass {
         glUniform1f(uniforms.neutralLift(), (float) config.neutralLift);
         glUniform1f(uniforms.luminanceBoostLimit(), (float) config.luminanceBoostLimit);
 
-        uploadPointLights(pointHandles, (float) config.exposure);
-        uploadAreaLights(areaHandles, (float) config.exposure);
+        uploadPointLights(pointHandles, (float) config.exposure, config.pointLightLimit);
+        uploadAreaLights(areaHandles, (float) config.exposure, config.areaLightLimit);
 
         glBindVertexArray(vertexArray);
         glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -233,10 +233,13 @@ public final class IrisVeilLightPass {
 
     public static void appendDebugInfo(List<String> lines) {
         LightRenderConfig config = LightRenderConfig.get();
+        if (lines.stream().anyMatch(line -> line.startsWith("[Veil Iris Lights]"))) {
+            return;
+        }
         lines.add("");
         lines.add("[Veil Iris Lights] " + (hookLogged ? "active" : "waiting"));
-        lines.add("Point lights: " + Math.max(lastPointCount, 0) + "/" + MAX_POINT_LIGHTS
-                + ", area lights: " + Math.max(lastAreaCount, 0) + "/" + MAX_AREA_LIGHTS);
+        lines.add("Point lights: " + Math.max(lastPointCount, 0) + "/" + config.pointLightLimit
+                + ", area lights: " + Math.max(lastAreaCount, 0) + "/" + config.areaLightLimit);
         lines.add("Quality: " + config.quality.name().toLowerCase()
                 + ", voxel occlusion: " + (lastOcclusionEnabled ? "active" : "inactive"));
         lines.add(String.format(
@@ -251,10 +254,10 @@ public final class IrisVeilLightPass {
     }
 
     private static void uploadPointLights(Collection<? extends LightRenderHandle<PointLightData>> handles,
-                                          float exposure) {
+                                          float exposure, int limit) {
         int count = 0;
         for (LightRenderHandle<PointLightData> handle : handles) {
-            if (!handle.isValid() || count >= MAX_POINT_LIGHTS) {
+            if (!handle.isValid() || count >= limit) {
                 continue;
             }
             PointLightData light = handle.getLightData();
@@ -279,10 +282,10 @@ public final class IrisVeilLightPass {
     }
 
     private static void uploadAreaLights(Collection<? extends LightRenderHandle<AreaLightData>> handles,
-                                         float exposure) {
+                                         float exposure, int limit) {
         int count = 0;
         for (LightRenderHandle<AreaLightData> handle : handles) {
-            if (!handle.isValid() || count >= MAX_AREA_LIGHTS) {
+            if (!handle.isValid() || count >= limit) {
                 continue;
             }
             AreaLightData light = handle.getLightData();
@@ -464,8 +467,8 @@ public final class IrisVeilLightPass {
     private static final String FRAGMENT_SHADER = """
             #version 150
 
-            const int MAX_POINT_LIGHTS = 48;
-            const int MAX_AREA_LIGHTS = 16;
+            const int MAX_POINT_LIGHTS = 96;
+            const int MAX_AREA_LIGHTS = 32;
 
             uniform sampler2D uDepth;
             uniform sampler3D uBlockGrid;

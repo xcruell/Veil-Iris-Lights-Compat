@@ -24,10 +24,16 @@ public final class LightRenderConfig {
     public static final double MAX_EXPOSURE = 2.0;
     public static final double MAX_COLOR_STRENGTH = 12.0;
     public static final double MAX_LUMINANCE_BOOST_LIMIT = 1.6;
+    public static final int MAX_POINT_LIGHTS = 96;
+    public static final int MAX_AREA_LIGHTS = 32;
 
     private static LightRenderConfig instance = defaults();
 
     public RenderQuality quality = RenderQuality.HIGH;
+    public int pointLightLimit = RenderQuality.HIGH.pointLightLimit();
+    public int areaLightLimit = RenderQuality.HIGH.areaLightLimit();
+    public boolean detailedNormals = RenderQuality.HIGH.detailedNormals();
+    public boolean voxelShadows = RenderQuality.HIGH.voxelShadows();
     public double exposure = DEFAULT_EXPOSURE;
     public double colorStrength = DEFAULT_COLOR_STRENGTH;
     public double colorSaturation = DEFAULT_COLOR_SATURATION;
@@ -70,7 +76,6 @@ public final class LightRenderConfig {
     }
 
     public void reset() {
-        this.quality = RenderQuality.HIGH;
         this.exposure = DEFAULT_EXPOSURE;
         this.colorStrength = DEFAULT_COLOR_STRENGTH;
         this.colorSaturation = DEFAULT_COLOR_SATURATION;
@@ -82,6 +87,14 @@ public final class LightRenderConfig {
         if (this.quality == null) {
             this.quality = RenderQuality.HIGH;
         }
+        if (this.pointLightLimit <= 0 || this.areaLightLimit <= 0) {
+            RenderQuality migrationPreset = this.quality == RenderQuality.CUSTOM
+                    ? RenderQuality.HIGH
+                    : this.quality;
+            applyPreset(migrationPreset);
+        }
+        this.pointLightLimit = clamp(this.pointLightLimit, 1, MAX_POINT_LIGHTS);
+        this.areaLightLimit = clamp(this.areaLightLimit, 1, MAX_AREA_LIGHTS);
         this.exposure = clamp(this.exposure, 0.01, MAX_EXPOSURE);
         this.colorStrength = clamp(this.colorStrength, 0.0, MAX_COLOR_STRENGTH);
         if (this.colorSaturation <= 0.0) {
@@ -99,27 +112,60 @@ public final class LightRenderConfig {
         return Math.max(min, Math.min(max, value));
     }
 
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    public void applyPreset(RenderQuality preset) {
+        if (preset == RenderQuality.CUSTOM) {
+            return;
+        }
+        this.quality = preset;
+        this.pointLightLimit = preset.pointLightLimit();
+        this.areaLightLimit = preset.areaLightLimit();
+        this.detailedNormals = preset.detailedNormals();
+        this.voxelShadows = preset.voxelShadows();
+    }
+
+    public void markCustom() {
+        this.quality = RenderQuality.CUSTOM;
+    }
+
     private static LightRenderConfig defaults() {
         return new LightRenderConfig();
     }
 
     public enum RenderQuality {
-        PERFORMANCE("option.veil_iris_lights.quality.performance", false, false),
-        BALANCED("option.veil_iris_lights.quality.balanced", false, true),
-        HIGH("option.veil_iris_lights.quality.high", true, true);
+        PERFORMANCE("option.veil_iris_lights.quality.performance", 24, 8, false, false),
+        BALANCED("option.veil_iris_lights.quality.balanced", 48, 16, false, true),
+        HIGH("option.veil_iris_lights.quality.high", 96, 32, true, true),
+        CUSTOM("option.veil_iris_lights.quality.custom", 0, 0, false, false);
 
         private final String translationKey;
+        private final int pointLightLimit;
+        private final int areaLightLimit;
         private final boolean detailedNormals;
         private final boolean voxelShadows;
 
-        RenderQuality(String translationKey, boolean detailedNormals, boolean voxelShadows) {
+        RenderQuality(String translationKey, int pointLightLimit, int areaLightLimit,
+                      boolean detailedNormals, boolean voxelShadows) {
             this.translationKey = translationKey;
+            this.pointLightLimit = pointLightLimit;
+            this.areaLightLimit = areaLightLimit;
             this.detailedNormals = detailedNormals;
             this.voxelShadows = voxelShadows;
         }
 
         public String translationKey() {
             return this.translationKey;
+        }
+
+        public int pointLightLimit() {
+            return this.pointLightLimit;
+        }
+
+        public int areaLightLimit() {
+            return this.areaLightLimit;
         }
 
         public boolean detailedNormals() {
@@ -131,8 +177,11 @@ public final class LightRenderConfig {
         }
 
         public RenderQuality next() {
-            RenderQuality[] values = values();
-            return values[(this.ordinal() + 1) % values.length];
+            return switch (this) {
+                case PERFORMANCE -> BALANCED;
+                case BALANCED -> HIGH;
+                case HIGH, CUSTOM -> PERFORMANCE;
+            };
         }
     }
 }

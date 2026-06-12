@@ -18,6 +18,9 @@ config="${mod_id}.mixins.iris.json"
 [[mixins]]
 config="${mod_id}.mixins.veil.json"
 
+[[mixins]]
+config="${mod_id}.mixins.betterf3.json"
+
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"

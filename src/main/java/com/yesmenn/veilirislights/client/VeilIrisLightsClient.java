@@ -3,6 +3,7 @@ package com.yesmenn.veilirislights.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.yesmenn.veilirislights.client.screen.LightRenderConfigScreen;
 import com.yesmenn.veilirislights.compat.light.IrisVeilLightPass;
+import com.yesmenn.veilirislights.compat.veil.OpenGlCapabilitiesBridge;
 import com.yesmenn.veilirislights.config.LightRenderConfig;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -27,6 +28,8 @@ public final class VeilIrisLightsClient {
     }
 
     public static void onClientTick(ClientTickEvent.Post event) {
+        OpenGlCapabilitiesBridge.captureRenderThreadCapabilities();
+
         Minecraft minecraft = Minecraft.getInstance();
         while (OPEN_CONFIG.consumeClick()) {
             minecraft.setScreen(new LightRenderConfigScreen(minecraft.screen));

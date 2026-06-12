@@ -13,9 +13,6 @@ import com.yesmenn.veilirislights.compat.veil.IrisVeilShaderCache;
 import static org.lwjgl.opengl.GL20C.GL_FRAGMENT_SHADER;
 import static org.lwjgl.opengl.GL20C.GL_VERTEX_SHADER;
 
-/**
- * Intercepts Veil's internal shader compilation to capture processed vertex shader source.
- */
 @Mixin(value = DirectShaderCompiler.class, remap = false)
 public class MixinDirectShaderCompiler {
 
@@ -31,11 +28,11 @@ public class MixinDirectShaderCompiler {
         if (type == GL_VERTEX_SHADER) {
             boolean hasGetVelocity = src.contains("getVelocity");
             boolean hasOffset = src.contains("offset");
-            VeilIrisLights.LOGGER.debug("[VeilHook] Captured vertex source for '{}': {} chars, hasGetVelocity={}, hasOffset={}",
+            VeilIrisLights.LOGGER.trace("[VeilHook] Captured vertex source for '{}': {} chars, hasGetVelocity={}, hasOffset={}",
                 source.sourceId(), src.length(), hasGetVelocity, hasOffset);
             IrisVeilShaderCache.storeProcessedVertexSource(source.sourceId(), source.sourceCode());
         } else {
-            VeilIrisLights.LOGGER.debug("[VeilHook] Captured fragment source for '{}': {} chars",
+            VeilIrisLights.LOGGER.trace("[VeilHook] Captured fragment source for '{}': {} chars",
                 source.sourceId(), src.length());
             IrisVeilShaderCache.storeProcessedFragmentSource(source.sourceId(), source.sourceCode());
         }
